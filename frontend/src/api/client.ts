@@ -18,7 +18,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000
 const getAuthHeaders = (token?: string, body?: BodyInit | null) => {
   const headers: Record<string, string> = {};
 
-  if (body !== null && !(body instanceof FormData)) {
+  if (body !== undefined && body !== null && !(body instanceof FormData)) {
     headers['Content-Type'] = 'application/json';
   }
 
@@ -29,7 +29,12 @@ const getAuthHeaders = (token?: string, body?: BodyInit | null) => {
   return headers;
 };
 
-async function apiRequest<T>(path: string, init: RequestInit = {}, token?: string): Promise<T> {
+async function apiRequest<T>(
+  path: string,
+  init: RequestInit = {},
+  token?: string,
+  responseType: 'auto' | 'blob' = 'auto',
+): Promise<T> {
   const body = init.body;
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
@@ -42,6 +47,10 @@ async function apiRequest<T>(path: string, init: RequestInit = {}, token?: strin
   if (!response.ok) {
     const detail = await response.text();
     throw new Error(detail || 'Request failed');
+  }
+
+  if (responseType === 'blob') {
+    return (await response.blob()) as T;
   }
 
   const contentType = response.headers.get('content-type') ?? '';
@@ -75,13 +84,13 @@ export const api = {
       { method: 'POST', body: JSON.stringify({ action, comment: comment || null }) },
       token,
     ),
-  downloadAttachment: async (submissionId: string, attachmentId: string, token: string) => {
-    const response = await fetch(`${API_BASE_URL}/api/submissions/${encodeURIComponent(submissionId)}/attachments/${encodeURIComponent(attachmentId)}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!response.ok) throw new Error((await response.text()) || 'Could not download attachment.');
-    return response.blob();
-  },
+  downloadAttachment: async (submissionId: string, attachmentId: string, token: string) =>
+    apiRequest<Blob>(
+      `/api/submissions/${encodeURIComponent(submissionId)}/attachments/${encodeURIComponent(attachmentId)}`,
+      { method: 'GET' },
+      token,
+      'blob',
+    ),
   availableReports: async (token: string) =>
     apiRequest<AvailableReport[]>('/api/submissions/available', { method: 'GET' }, token),
   createSubmission: async (report: AvailableReport, token: string) =>

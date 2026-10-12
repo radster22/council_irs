@@ -15,14 +15,14 @@ Build a local demonstration application for NYC Council Initiative Reporting Sys
 
 ## Non-Negotiable Rules
 
-1. Treat the live MySQL schema as authoritative. `database/schema.sql` is absent; do not fabricate or modify database schema or triggers unless explicitly requested.
+1. Treat the live MySQL schema as authoritative. `database/schema.sql` is the checked-in DDL supplied for this project; compare it with live metadata when available. Do not fabricate or modify the database contract or triggers unless explicitly requested.
 2. Preserve composite foreign-key integrity, historical submission versions, and audit-log immutability.
 3. Enforce authentication, role authorization, and organization-level access on the backend.
 4. Use `Decimal`-based arithmetic for monetary calculations; never use floating-point arithmetic for budgets.
 5. Enforce a maximum of 100 budget line items and validate budget reconciliation before submission.
 6. Never trust client-supplied totals, user roles, organization IDs, or submission permissions.
 7. Validate uploads, enforce the 25 MiB limit, and prevent path traversal.
-8. Never commit credentials, local uploads, database dumps, or generated secrets.
+8. Never commit real or production credentials, local uploads, database dumps, or generated secrets. The explicitly approved synthetic demo accounts and their hashes may be included in `database/seed_demo.sql`; keep their demo-only passwords documented as local-only.
 
 ## Project Guidance
 
@@ -39,11 +39,10 @@ The RFP is the source for contractual requirements. `business_rules/NYC_Council_
 
 ## Local Commands
 
-* Backend: `cd backend && uvicorn app.main:app --reload --port 8000`
-* Frontend: `cd frontend && npm run dev`
-* Backend tests: `pytest backend/tests`
-* Frontend checks: `cd frontend && npm run lint && npm run build`
-* Frontend tests: no test script is configured yet; add the test runner and script before relying on `npm test`.
+* Backend: from the repository root, `cd backend && uvicorn app.main:app --reload --port 8000`
+* Frontend: from the repository root, `cd frontend && npm run dev`
+* Backend checks: `python -m compileall -q backend/app && python -m pytest backend/tests -q`
+* Frontend checks: `cd frontend && npm run lint && npm test && npm run build`
 
 ## Implementation Discipline
 

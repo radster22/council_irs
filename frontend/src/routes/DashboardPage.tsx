@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import type { AvailableReport, SubmissionListItem } from '../types';
@@ -7,33 +8,32 @@ import type { AvailableReport, SubmissionListItem } from '../types';
 export function DashboardPage() {
   const { token, user } = useAuth();
   const navigate = useNavigate();
-  const [submissions, setSubmissions] = useState<SubmissionListItem[]>([]);
-  const [available, setAvailable] = useState<AvailableReport[]>([]);
-  const [loading, setLoading] = useState(true);
   const [startingId, setStartingId] = useState<string | null>(null);
   const [error, setError] = useState('');
 
-  const loadDashboard = async () => {
-    if (!token) return;
-    setLoading(true);
-    setError('');
-    try {
-      const [nextSubmissions, nextAvailable] = await Promise.all([
+  const {
+    data: dashboardData,
+    isPending: loading,
+    error: dashboardError,
+    refetch: loadDashboard,
+  } = useQuery({
+    queryKey: ['submitter-dashboard', token],
+    enabled: Boolean(token),
+    queryFn: async (): Promise<[SubmissionListItem[], AvailableReport[]]> => {
+      if (!token) throw new Error('Authentication is required.');
+      return Promise.all([
         api.listSubmissions(token),
         api.availableReports(token),
       ]);
-      setSubmissions(nextSubmissions);
-      setAvailable(nextAvailable);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not load reports.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
+    },
+  });
+  const submissions = dashboardData?.[0] ?? [];
+  const available = dashboardData?.[1] ?? [];
+  const loadError = error || (dashboardError instanceof Error ? dashboardError.message : '');
+  const refreshDashboard = () => {
+    setError('');
     void loadDashboard();
-  }, [token]);
+  };
 
   const startReport = async (report: AvailableReport) => {
     if (!token) return;
@@ -77,12 +77,12 @@ export function DashboardPage() {
         </section>
       ) : null}
 
-      {error ? <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
+      {loadError ? <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{loadError}</div> : null}
 
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-xl font-semibold text-slate-900">My reports</h2>
-          <button type="button" onClick={() => void loadDashboard()} className="text-sm font-medium text-brand-700 hover:underline">
+          <button type="button" onClick={refreshDashboard} className="text-sm font-medium text-brand-700 hover:underline">
             Refresh
           </button>
         </div>

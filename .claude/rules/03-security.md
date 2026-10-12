@@ -1,6 +1,6 @@
 # Security Rules
 
-- Never commit secrets, credentials, production data, or uploaded files.
+- Never commit real/production secrets, credentials, production data, or uploaded files. Synthetic local-demo credentials may appear only in the explicitly approved seed script and must be labeled local-only.
 - Validate and authorize every externally supplied identifier and file operation.
 - Use parameterized database queries and enforce least-privilege access.
 - Avoid logging sensitive personal, financial, or authentication data.

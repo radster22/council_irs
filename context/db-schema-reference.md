@@ -2,9 +2,9 @@
 
 ## Verification Status
 
-The live `council_irs_db` schema was inspected using read-only `INFORMATION_SCHEMA` SELECTs: 95 column rows, 59 key-usage rows, 56 index rows, 18 foreign keys, and 7 triggers. The application connection also passed `SELECT 1`. No table, trigger, or application data was modified. `database/schema.sql` is absent; use the live database as the source of truth.
+The live `council_irs_db` schema was previously inspected using read-only `INFORMATION_SCHEMA` SELECTs: 95 column rows, 59 key-usage rows, 56 index rows, 18 foreign keys, and 7 triggers. The application connection also passed `SELECT 1`; no live table, trigger, or application data was modified during that inspection. `database/schema.sql` now records the DDL supplied for this repository. This checked-in copy is a setup artifact, not proof of a fresh live-schema comparison; use the connected live schema as authoritative if the two differ.
 
-The ORM in `backend/app/models/` matches the live table names, columns, types, and nullability. Primary, unique, and foreign-key columns, including their composite order, were compared against the live metadata with no mismatches.
+The ORM in `backend/app/models/` has contract tests for table names, composite foreign keys, delete rules, and named indexes. Earlier read-only live metadata comparison reported no table, column, nullability, key, or index mismatches. Re-run that comparison when a live MySQL connection is available; repository tests do not replace it.
 
 ## Tables
 
@@ -33,4 +33,4 @@ The ORM in `backend/app/models/` matches the live table names, columns, types, a
 
 ## Authentication Verification
 
-The API authenticates against `users.email`, `users.password_hash`, and `users.is_active`; roles come from the database, not client input or token claims. Unit tests use an isolated in-memory SQLite database. A successful login against an actual MySQL user account has not been exercised.
+The API authenticates against `users.email`, `users.password_hash`, and `users.is_active`; roles come from the database, not client input or token claims. Unit tests use an isolated in-memory SQLite database. A successful login against an actual MySQL user account has not been exercised. `database/seed_demo.sql` contains synthetic local accounts and workflow examples for a fresh local schema.

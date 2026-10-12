@@ -1,25 +1,28 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import type { ReviewQueueItem } from '../types';
 
 export function ReviewPage() {
   const { token } = useAuth();
-  const [items, setItems] = useState<ReviewQueueItem[]>([]);
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('');
   const [unbalancedOnly, setUnbalancedOnly] = useState(false);
-  const [error, setError] = useState('');
 
-  useEffect(() => {
-    if (!token) return;
-    let active = true;
-    api.reviewQueue(token, { query, status: status || undefined, balanced: unbalancedOnly ? false : undefined })
-      .then((data) => { if (active) { setItems(data); setError(''); } })
-      .catch((err: unknown) => { if (active) setError(err instanceof Error ? err.message : 'Could not load the review queue.'); });
-    return () => { active = false; };
-  }, [token, query, status, unbalancedOnly]);
+  const { data: items = [], error } = useQuery<ReviewQueueItem[], Error>({
+    queryKey: ['review-queue', token, query, status, unbalancedOnly],
+    enabled: Boolean(token),
+    queryFn: () => {
+      if (!token) throw new Error('Authentication is required.');
+      return api.reviewQueue(token, {
+        query,
+        status: status || undefined,
+        balanced: unbalancedOnly ? false : undefined,
+      });
+    },
+  });
 
   return (
     <div className="space-y-6">
@@ -48,7 +51,7 @@ export function ReviewPage() {
         </label>
       </section>
 
-      {error ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
+      {error ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error.message}</div> : null}
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="grid grid-cols-[1.1fr_1.2fr_1fr_150px_120px_110px] gap-3 border-b border-slate-200 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
           <span>Initiative</span><span>Organization</span><span>Cycle</span><span>Status</span><span>Budget</span><span>Balance</span>

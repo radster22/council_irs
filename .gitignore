@@ -9,11 +9,18 @@ venv/
 node_modules/
 dist/
 coverage/
+*.tsbuildinfo
+
+# TypeScript config outputs are generated from the corresponding .ts sources.
+frontend/vite.config.js
+frontend/vite.config.d.ts
+frontend/vitest.config.js
+frontend/vitest.config.d.ts
 
 # Local configuration and uploaded files
 .env
 .env.*
-!.env.example
+!/.env.example
 .uploads/*
 !.uploads/.gitkeep
 

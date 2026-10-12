@@ -1,0 +1,11 @@
+{
+  "id": "example-audit-entry",
+  "actor_id": "example-user",
+  "action": "budget.submitted",
+  "resource_type": "budget",
+  "resource_id": "example-budget",
+  "occurred_at": "2026-10-10T12:00:00Z",
+  "metadata": {
+    "fiscal_year": 2027
+  }
+}

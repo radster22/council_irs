@@ -1,0 +1,20 @@
+{
+  "id": "annual-budget-submission",
+  "title": "Annual Budget Submission",
+  "version": 1,
+  "fields": [
+    {
+      "id": "agency_name",
+      "type": "text",
+      "label": "Agency name",
+      "required": true
+    },
+    {
+      "id": "fiscal_year",
+      "type": "integer",
+      "label": "Fiscal year",
+      "required": true,
+      "minimum": 2000
+    }
+  ]
+}

@@ -105,6 +105,12 @@ export type ReviewQueueItem = SubmissionListItem & {
   is_balanced: boolean;
   updated_at: string | null;
   is_incomplete: boolean;
+  validation_errors: string[];
+  organization_ein: string;
+  borough: string | null;
+  fiscal_year: number;
+  initiative_id: string;
+  cycle_id: string;
 };
 
 export type AttachmentSummary = {
@@ -163,4 +169,5 @@ export type OpenObligation = {
   cycle_name: string;
   due_date: string;
   awarded_amount: string;
+  is_overdue: boolean;
 };

@@ -70,6 +70,11 @@ def review_queue(
     status_filter: str | None = Query(default=None, alias="status"),
     query: str | None = Query(default=None, max_length=255),
     balanced: bool | None = Query(default=None),
+    ein: str | None = Query(default=None, max_length=10),
+    borough: str | None = Query(default=None, max_length=50),
+    fiscal_year: int | None = Query(default=None, ge=2000, le=2200),
+    initiative: str | None = Query(default=None, max_length=255),
+    cycle: str | None = Query(default=None, max_length=100),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[ReviewQueueItemResponse]:
@@ -77,7 +82,9 @@ def review_queue(
     if status_filter and status_filter not in statuses:
         raise HTTPException(status_code=400, detail="Unsupported review status filter.")
     try:
-        items = list_review_queue(db, user, status_filter=status_filter, query=query, balanced=balanced)
+        items = list_review_queue(db, user, status_filter=status_filter, query=query, balanced=balanced,
+                                  ein=ein, borough=borough, fiscal_year=fiscal_year,
+                                  initiative=initiative, cycle=cycle)
     except SubmissionError as exc:
         _raise_submission_error(exc)
     return [ReviewQueueItemResponse(**item) for item in items]

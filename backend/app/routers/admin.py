@@ -36,6 +36,7 @@ from app.schemas import (
     FormTemplateCreateRequest,
     InitiativeCreateRequest,
     InitiativeUpdateRequest,
+    OrganizationCreateRequest,
     RolloverRequest,
     RolloverResponse,
 )
@@ -48,6 +49,29 @@ COUNCIL_ROLES = ("COUNCIL_ADMIN", "COUNCIL_REVIEWER", "VIEW_ONLY")
 def list_organizations(_: User = Depends(require_roles("COUNCIL_ADMIN")), db: Session = Depends(get_db)) -> list[dict[str, str]]:
     return [{"id": row.id, "ein": row.ein, "legal_name": row.legal_name}
             for row in db.scalars(select(Organization).where(Organization.status == "ACTIVE").order_by(Organization.legal_name)).all()]
+
+
+@router.post("/organizations", status_code=201)
+def create_organization(payload: OrganizationCreateRequest, _: User = Depends(require_roles("COUNCIL_ADMIN")), db: Session = Depends(get_db)) -> dict[str, str | None]:
+    ein_digits = payload.ein.replace("-", "")
+    organization = Organization(
+        id=str(uuid4()),
+        ein=f"{ein_digits[:2]}-{ein_digits[2:]}",
+        legal_name=payload.legal_name.strip(),
+        org_type=payload.org_type,
+        borough=payload.borough.strip() if payload.borough and payload.borough.strip() else None,
+        status="ACTIVE",
+    )
+    if not organization.legal_name:
+        raise HTTPException(status_code=422, detail="Organization legal name cannot be blank.")
+    db.add(organization)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="An organization with that EIN already exists.") from exc
+    return {"id": organization.id, "ein": organization.ein, "legal_name": organization.legal_name,
+            "org_type": organization.org_type, "borough": organization.borough}
 
 
 @router.get("/initiatives")
@@ -190,6 +214,17 @@ def create_template(initiative_id: str, payload: FormTemplateCreateRequest, _: U
             raise HTTPException(status_code=422, detail=f"Unsupported form field type for {field['id']}.")
         if field_type in {"select", "dropdown"} and (not isinstance(field.get("options"), list) or any(not isinstance(option, str) for option in field["options"])):
             raise HTTPException(status_code=422, detail=f"Select field {field['id']} needs an options list.")
+    field_positions = {field["id"]: position for position, field in enumerate(fields) if isinstance(field, dict) and isinstance(field.get("id"), str)}
+    for field in fields:
+        if not isinstance(field, dict) or field.get("visible_when") is None:
+            continue
+        condition = field["visible_when"]
+        source_field_id = condition.get("field_id") if isinstance(condition, dict) else None
+        if (not isinstance(source_field_id, str) or source_field_id not in identifiers
+                or field_positions[source_field_id] >= field_positions[field["id"]]
+                or ("equals" in condition) == ("not_equals" in condition)
+                or not set(condition).issubset({"field_id", "equals", "not_equals"})):
+            raise HTTPException(status_code=422, detail=f"Conditional field {field['id']} needs one valid equals or not_equals rule referencing another field.")
     reconciliation = schema.get("budget_reconciliation")
     if reconciliation is not None:
         target = reconciliation.get("target") if isinstance(reconciliation, dict) else None
@@ -237,9 +272,11 @@ def list_open_obligations(_: User = Depends(require_roles(*COUNCIL_ROLES)), db: 
                Submission.organization_id == Organization.id, Submission.cycle_id == ReportingCycle.id).exists())
         .order_by(ReportingCycle.due_date, Initiative.name, Organization.legal_name)
     ).all()
+    today = date.today()
     return [{"initiative_id": row[0], "initiative_name": row[1], "organization_id": row[2],
              "organization_name": row[3], "borough": row[4], "cycle_id": row[5],
-             "cycle_name": row[6], "due_date": row[7].isoformat(), "awarded_amount": str(row[8])}
+             "cycle_name": row[6], "due_date": row[7].isoformat(), "awarded_amount": str(row[8]),
+             "is_overdue": row[7] < today}
             for row in rows]
 
 

@@ -1,4 +1,4 @@
-from sqlalchemy import ForeignKeyConstraint
+from sqlalchemy import CheckConstraint, ForeignKeyConstraint
 
 from app.db import Base
 from app.models import Submission, SubmissionVersion
@@ -86,4 +86,20 @@ def test_named_non_unique_indexes_match_live_schema() -> None:
         "initiatives": {"idx_init_fy": ("fiscal_year",)},
         "submissions": {"idx_sub_triage": ("is_balanced", "status")},
         "users": {"idx_user_role": ("role",)},
+    }
+
+
+def test_orm_declares_live_check_constraints() -> None:
+    checks = {
+        table_name: {constraint.name: str(constraint.sqltext) for constraint in table.constraints
+                     if isinstance(constraint, CheckConstraint)}
+        for table_name, table in Base.metadata.tables.items()
+        if any(isinstance(constraint, CheckConstraint) for constraint in table.constraints)
+    }
+
+    assert checks == {
+        "initiative_relationships": {"chk_rel_distinct": "predecessor_id <> successor_id"},
+        "reporting_cycles": {"chk_cycle_dates": "start_date <= due_date"},
+        "budget_line_items": {"chk_line_number": "line_number BETWEEN 1 AND 100"},
+        "attachments": {"chk_att_size": "file_size_bytes > 0 AND file_size_bytes <= 26214400"},
     }

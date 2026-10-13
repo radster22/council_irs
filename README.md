@@ -52,8 +52,9 @@ All accounts are synthetic and use demo-only passwords. Change or remove them be
 | City agency submitter | `submitter.agency@nyc.gov` | `test123` |
 | Bronx submitter | `submitter.bronx@cbo.org` | `test123` |
 | Brooklyn submitter | `submitter.brooklyn@cbo.org` | `test123` |
+| Staten Island submitter | `submitter.statenisland@cbo.org` | `test123` |
 
-The synthetic records cover two unbalanced cases (a draft and a flagged submitted report), a balanced submitted report, a report in review, a revision-requested report, an approved report, and an open unstarted assignment. The flagged submitted case is intentionally seeded for reviewer triage; new submissions still go through server-side budget validation. Upload documents through the portal; they are stored under the repository-root `.uploads/` directory, which is ignored by Git and starts empty.
+The synthetic records cover two incomplete, unbalanced drafts (one has a zero-value budget row); a flagged submitted report with a budget shortfall; a balanced submitted report; a report in review; a revision-requested report; an approved report; and an open unstarted report. The unstarted assignment is intentionally overdue while still open, so Council users can exercise overdue triage and the submitter can start and complete it. The flagged submitted case is intentionally seeded for reviewer triage; new submissions still go through server-side budget validation. Upload documents through the portal; they are stored under the repository-root `.uploads/` directory, which is ignored by Git and starts empty.
 
 ## Backend
 

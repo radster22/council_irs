@@ -9,7 +9,7 @@ Use for budget-entry, total, balance, or budget-related submission work. Read [b
 
 ## Procedure
 
-1. Confirm the submission's published form template and its configured `budget_reconciliation.target`. The RFP requires a specific configured sum; it does not establish one universal balance target.
+1. Confirm the submission's published form template and its configured `budget_reconciliation.target`. The form must define any required sum; there is no universal balance target.
 2. Treat client totals as display-only. Calculate each total and reconciliation result on the backend.
 3. Use `Decimal` from validated decimal input through persistence/response; do not convert currency through binary floating point.
 4. Enforce the 1–100 line-item range on server writes and keep line numbers unique per submission. Respect DB constraints and `RESTRICT` relationships.

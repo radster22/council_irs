@@ -9,8 +9,8 @@ Use when designing, reviewing, or implementing year-to-year portfolio behavior. 
 
 ## Required behavior to trace
 
-- BR-015 / RFP pp. 9–10: authorized Council Finance users can duplicate prior-year reporting structure/forms; standard and initiative-specific questions and layouts carry forward.
-- BR-016 / RFP p. 10: renamed or combined initiatives keep links to predecessor initiatives and historical reports.
+- BR-015: authorized Council Finance users can duplicate prior-year reporting structures/forms; standard and initiative-specific questions and layouts carry forward.
+- BR-016: renamed or combined initiatives keep links to predecessor initiatives and historical reports.
 - Form versions and prior submissions remain historically stable. Never edit published schema or historical snapshots in place; preserve existing composite foreign keys and lineage.
 
 ## Test plan

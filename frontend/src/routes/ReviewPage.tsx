@@ -22,9 +22,14 @@ export function ReviewPage() {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('');
   const [unbalancedOnly, setUnbalancedOnly] = useState(false);
+  const [ein, setEin] = useState('');
+  const [borough, setBorough] = useState('');
+  const [fiscalYear, setFiscalYear] = useState('');
+  const [initiativeFilter, setInitiativeFilter] = useState('');
+  const [cycleFilter, setCycleFilter] = useState('');
 
   const { data: items = [], error } = useQuery<ReviewQueueItem[], Error>({
-    queryKey: ['review-queue', token, query, status, unbalancedOnly],
+    queryKey: ['review-queue', token, query, status, unbalancedOnly, ein, borough, fiscalYear, initiativeFilter, cycleFilter],
     enabled: Boolean(token),
     queryFn: () => {
       if (!token) throw new Error('Authentication is required.');
@@ -32,6 +37,11 @@ export function ReviewPage() {
         query,
         status: status || undefined,
         balanced: unbalancedOnly ? false : undefined,
+        ein: ein || undefined,
+        borough: borough || undefined,
+        fiscal_year: fiscalYear ? Number(fiscalYear) : undefined,
+        initiative: initiativeFilter || undefined,
+        cycle: cycleFilter || undefined,
       });
     },
   });
@@ -64,7 +74,7 @@ export function ReviewPage() {
         <div className="no-print flex flex-wrap gap-2">
           <button onClick={() => downloadExport('xlsx')} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700">Download Excel</button>
           <button onClick={() => downloadExport('csv')} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700">Download CSV bundle</button>
-          {user?.role === 'COUNCIL_ADMIN' ? <Link to="/admin/initiatives" className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white">Initiatives & forms</Link> : null}
+          {user?.role === 'COUNCIL_ADMIN' ? <Link to="/admin/initiatives" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700">Initiatives & forms</Link> : null}
           {user?.role === 'COUNCIL_ADMIN' ? <Link to="/admin/rollover" className="rounded-lg border border-brand-300 bg-white px-3 py-2 text-sm font-semibold text-brand-700">Annual rollover</Link> : null}
         </div>
       </header>
@@ -93,13 +103,31 @@ export function ReviewPage() {
         <h2 className="font-semibold text-slate-900">Open reporting obligations</h2>
         <p className="mt-1 text-sm text-slate-600">Eligible organization and cycle assignments without a started report.</p>
         <div className="mt-3 overflow-x-auto"><table className="w-full min-w-[700px] text-left text-sm"><thead><tr className="border-b text-xs uppercase text-slate-500"><th className="py-2">Initiative</th><th>Organization</th><th>Cycle</th><th>Due</th><th>Awarded</th></tr></thead><tbody>
-          {obligations.map((item) => <tr key={`${item.initiative_id}-${item.organization_id}-${item.cycle_id}`} className="border-b border-slate-100"><td className="py-2">{item.initiative_name}</td><td>{item.organization_name}</td><td>{item.cycle_name}</td><td>{item.due_date}</td><td>${item.awarded_amount}</td></tr>)}
+          {obligations.map((item) => <tr key={`${item.initiative_id}-${item.organization_id}-${item.cycle_id}`} className="border-b border-slate-100"><td className="py-2">{item.initiative_name}</td><td>{item.organization_name}</td><td>{item.cycle_name}</td><td>{item.due_date}{item.is_overdue ? <span className="ml-2 inline-flex rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-800">Overdue</span> : null}</td><td>${item.awarded_amount}</td></tr>)}
         </tbody></table>{!obligations.length ? <p className="py-4 text-sm text-slate-500">No open unstarted obligations.</p> : null}</div>
       </section>
 
-      <section className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-[1fr_220px_auto]">
+      <section className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-2 xl:grid-cols-4">
         <label className="text-sm font-medium text-slate-700">Search
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Initiative, organization, cycle, or ID" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" />
+        </label>
+        <label className="text-sm font-medium text-slate-700">Organization EIN
+          <input value={ein} onChange={(event) => setEin(event.target.value)} placeholder="Search EIN" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" />
+        </label>
+        <label className="text-sm font-medium text-slate-700">Borough
+          <select value={borough} onChange={(event) => setBorough(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal">
+            <option value="">All boroughs</option>
+            {['Manhattan', 'Brooklyn', 'Queens', 'Bronx', 'Staten Island', 'Citywide'].map((value) => <option key={value}>{value}</option>)}
+          </select>
+        </label>
+        <label className="text-sm font-medium text-slate-700">Fiscal year
+          <input type="number" min="2000" max="2200" value={fiscalYear} onChange={(event) => setFiscalYear(event.target.value)} placeholder="All years" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" />
+        </label>
+        <label className="text-sm font-medium text-slate-700">Initiative
+          <input value={initiativeFilter} onChange={(event) => setInitiativeFilter(event.target.value)} placeholder="Initiative name" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" />
+        </label>
+        <label className="text-sm font-medium text-slate-700">Reporting cycle
+          <input value={cycleFilter} onChange={(event) => setCycleFilter(event.target.value)} placeholder="Cycle name" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" />
         </label>
         <label className="text-sm font-medium text-slate-700">Status
           <select value={status} onChange={(event) => setStatus(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal">
@@ -120,8 +148,9 @@ export function ReviewPage() {
         </div>
         {items.length ? items.map((item) => (
           <Link key={item.submission_id} to={`/review/${encodeURIComponent(item.submission_id)}`} className="grid grid-cols-[1.1fr_1.2fr_1fr_150px_120px_110px] gap-3 border-b border-slate-100 px-5 py-4 text-sm text-slate-700 last:border-0 hover:bg-slate-50">
-            <span className="font-medium text-slate-900">{item.initiative_name}</span><span>{item.organization_name}</span><span>{item.cycle_name}</span><span>{item.status}{item.is_incomplete ? ' · Incomplete' : ''}</span><span>${item.total_budget}</span>
+            <span className="font-medium text-slate-900">{item.initiative_name}<span className="ml-1 text-xs font-normal text-slate-500">FY{item.fiscal_year}</span></span><span>{item.organization_name}<span className="block text-xs text-slate-500">{item.organization_ein}{item.borough ? ` · ${item.borough}` : ''}</span></span><span>{item.cycle_name}</span><span>{item.status}{item.is_incomplete ? ' · Incomplete' : ''}</span><span>${item.total_budget}</span>
             <span className={item.is_balanced ? 'text-emerald-700' : 'font-semibold text-amber-700'}>{item.is_balanced ? 'Balanced' : 'Flagged'}</span>
+            {item.validation_errors.length ? <span className="col-span-6 -mt-2 text-xs text-amber-800">{item.validation_errors.join(' ')}</span> : null}
           </Link>
         )) : <p className="px-5 py-10 text-center text-sm text-slate-500">No reports match these filters.</p>}
       </section>

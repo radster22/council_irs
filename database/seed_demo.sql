@@ -11,7 +11,8 @@ INSERT INTO organizations (id, ein, legal_name, org_type, borough, status) VALUE
     ('org-002', '11-7654321', 'Queens Youth Literacy Initiative', 'CBO', 'Queens', 'ACTIVE'),
     ('org-003', '12-9876543', 'Department of Youth & Community Development', 'CITY_AGENCY', 'Citywide', 'ACTIVE'),
     ('org-004', '14-5551234', 'Bronx Environmental & Green Jobs Network', 'CBO', 'Bronx', 'ACTIVE'),
-    ('org-005', '15-4449876', 'Brooklyn Legal & Tenant Advocacy Center', 'CBO', 'Brooklyn', 'ACTIVE');
+    ('org-005', '15-4449876', 'Brooklyn Legal & Tenant Advocacy Center', 'CBO', 'Brooklyn', 'ACTIVE'),
+    ('org-006', '16-3332211', 'Staten Island Green Futures Collaborative', 'CBO', 'Staten Island', 'ACTIVE');
 
 INSERT INTO initiatives (id, code, name, fiscal_year, status) VALUES
     ('init-101', 'INIT-YOUTH-01', 'Youth Development & Literacy Initiative', 2026, 'ACTIVE'),
@@ -27,7 +28,8 @@ INSERT INTO reporting_cycles (id, initiative_id, cycle_name, start_date, due_dat
     ('cyc-101-final', 'init-101', 'FY2026 Final Reporting', '2026-12-01', '2027-04-30', 'UPCOMING'),
     ('cyc-102-mid', 'init-102', 'FY2026 Mid-Year Reporting', '2026-07-01', '2026-11-15', 'OPEN'),
     ('cyc-102-final', 'init-102', 'FY2026 Final Reporting', '2026-12-01', '2027-04-30', 'UPCOMING'),
-    ('cyc-103-mid', 'init-103', 'FY2026 Mid-Year Reporting', '2026-07-01', '2026-11-15', 'OPEN'),
+    -- Deliberately overdue but still open to exercise overdue triage and completion.
+    ('cyc-103-mid', 'init-103', 'FY2026 Mid-Year Reporting', '2026-07-01', '2026-09-30', 'OPEN'),
     ('cyc-103-final', 'init-103', 'FY2026 Final Reporting', '2026-12-01', '2027-04-30', 'UPCOMING'),
     ('cyc-201-final', 'init-201', 'FY2025 Final Reporting', '2025-12-01', '2026-04-30', 'CLOSED');
 
@@ -37,7 +39,9 @@ INSERT INTO initiative_organizations (initiative_id, organization_id, awarded_am
     ('init-102', 'org-003', 60000.00),
     ('init-103', 'org-004', 60000.00),
     ('init-102', 'org-005', 25000.00),
-    ('init-101', 'org-005', 40000.00);
+    ('init-101', 'org-005', 40000.00),
+    ('init-101', 'org-006', 45000.00),
+    ('init-103', 'org-006', 55000.00);
 
 INSERT INTO form_templates (id, initiative_id, version, schema_definition, is_published) VALUES
     ('tpl-101-v1', 'init-101', 1,
@@ -100,21 +104,24 @@ INSERT INTO users (id, email, password_hash, full_name, role, is_active) VALUES
     ('usr-sub-queens', 'submitter.queens@cbo.org', '$2b$12$0phRZpLJuKrqfD4NuIjsW.YjDi6Q/0DJxh2juHyyospx4GGU0WeQO', 'Queens Submitter', 'EXTERNAL_SUBMITTER', TRUE),
     ('usr-sub-agency', 'submitter.agency@nyc.gov', '$2b$12$0phRZpLJuKrqfD4NuIjsW.YjDi6Q/0DJxh2juHyyospx4GGU0WeQO', 'Agency Submitter', 'EXTERNAL_SUBMITTER', TRUE),
     ('usr-sub-bronx', 'submitter.bronx@cbo.org', '$2b$12$0phRZpLJuKrqfD4NuIjsW.YjDi6Q/0DJxh2juHyyospx4GGU0WeQO', 'Bronx Submitter', 'EXTERNAL_SUBMITTER', TRUE),
-    ('usr-sub-brooklyn', 'submitter.brooklyn@cbo.org', '$2b$12$0phRZpLJuKrqfD4NuIjsW.YjDi6Q/0DJxh2juHyyospx4GGU0WeQO', 'Brooklyn Submitter', 'EXTERNAL_SUBMITTER', TRUE);
+    ('usr-sub-brooklyn', 'submitter.brooklyn@cbo.org', '$2b$12$0phRZpLJuKrqfD4NuIjsW.YjDi6Q/0DJxh2juHyyospx4GGU0WeQO', 'Brooklyn Submitter', 'EXTERNAL_SUBMITTER', TRUE),
+    ('usr-sub-staten-island', 'submitter.statenisland@cbo.org', '$2b$12$0phRZpLJuKrqfD4NuIjsW.YjDi6Q/0DJxh2juHyyospx4GGU0WeQO', 'Staten Island Submitter', 'EXTERNAL_SUBMITTER', TRUE);
 
 INSERT INTO user_organizations (user_id, organization_id, is_primary) VALUES
     ('usr-sub-harlem', 'org-001', TRUE),
     ('usr-sub-queens', 'org-002', TRUE),
     ('usr-sub-agency', 'org-003', TRUE),
     ('usr-sub-bronx', 'org-004', TRUE),
-    ('usr-sub-brooklyn', 'org-005', TRUE);
+    ('usr-sub-brooklyn', 'org-005', TRUE),
+    ('usr-sub-staten-island', 'org-006', TRUE);
 
 INSERT INTO submissions
     (id, initiative_id, organization_id, cycle_id, template_version, status,
      form_data, allocated_budget, total_budget, is_balanced, created_by)
 VALUES
     ('sub-draft', 'init-101', 'org-001', 'cyc-101-mid', 1, 'DRAFT',
-     JSON_OBJECT('participants_served', 80, 'borough', 'Manhattan', 'program_narrative', 'Draft literacy activities are underway.'),
+     -- Intentionally incomplete and $5,000 short; the submitter can finish it in the editor.
+     JSON_OBJECT('participants_served', 80, 'borough', 'Manhattan'),
      50000.00, 45000.00, FALSE, 'usr-sub-harlem'),
     ('sub-submitted', 'init-101', 'org-002', 'cyc-101-mid', 1, 'SUBMITTED',
      JSON_OBJECT('participants_served', 145, 'borough', 'Queens', 'program_narrative', 'Delivered literacy workshops across Queens.'),
@@ -128,6 +135,10 @@ VALUES
     ('sub-approved', 'init-102', 'org-005', 'cyc-102-mid', 1, 'APPROVED',
      JSON_OBJECT('workshops_held', 12, 'community_impact', 'Residents attended arts workshops and a gallery showcase.'),
      25000.00, 25000.00, TRUE, 'usr-sub-brooklyn'),
+    -- Second repairable case: incomplete form and $1,000 below the $45,000 award.
+    ('sub-edge-draft', 'init-101', 'org-006', 'cyc-101-mid', 1, 'DRAFT',
+     JSON_OBJECT('participants_served', 37, 'borough', 'Staten Island'),
+     45000.00, 44000.00, FALSE, 'usr-sub-staten-island'),
     -- Seeded historical anomaly for reviewer triage; new unbalanced submissions are rejected by the API.
     ('sub-flagged', 'init-101', 'org-005', 'cyc-101-mid', 1, 'SUBMITTED',
      JSON_OBJECT('participants_served', 62, 'borough', 'Brooklyn', 'program_narrative', 'Literacy programming expanded to two neighborhood sites.'),
@@ -138,6 +149,7 @@ INSERT INTO budget_line_items
 VALUES
     ('li-draft-1', 'sub-draft', 1, 'Personnel', 'Youth program coordinator', 30000.00, 12000.00),
     ('li-draft-2', 'sub-draft', 2, 'OTPS - Supplies', 'Books and literacy kits', 15000.00, 5000.00),
+    ('li-draft-3', 'sub-draft', 3, 'OTPS - Other', 'Placeholder row to complete or remove', 0.00, 0.00),
     ('li-submit-1', 'sub-submitted', 1, 'Personnel', 'Lead literacy instructor', 45000.00, 45000.00),
     ('li-submit-2', 'sub-submitted', 2, 'OTPS - Supplies', 'Books and program materials', 20000.00, 19000.00),
     ('li-submit-3', 'sub-submitted', 3, 'OTPS - Space', 'Community room rental', 10000.00, 10000.00),
@@ -148,6 +160,8 @@ VALUES
     ('li-revision-2', 'sub-revision', 2, 'OTPS - Equipment', 'Gardening and safety equipment', 20000.00, 18500.00),
     ('li-approved-1', 'sub-approved', 1, 'Personnel', 'Community arts instructor', 18000.00, 18000.00),
     ('li-approved-2', 'sub-approved', 2, 'OTPS - Materials', 'Art supplies and canvas', 7000.00, 7000.00),
+    ('li-edge-draft-1', 'sub-edge-draft', 1, 'Personnel', 'Green programs coordinator', 30000.00, 28000.00),
+    ('li-edge-draft-2', 'sub-edge-draft', 2, 'OTPS - Supplies', 'Native plant and safety supplies', 14000.00, 9000.00),
     ('li-flagged-1', 'sub-flagged', 1, 'Personnel', 'Part-time literacy instructor', 24000.00, 12000.00),
     ('li-flagged-2', 'sub-flagged', 2, 'OTPS - Supplies', 'Reading materials for participants', 8000.00, 3500.00);
 
@@ -193,6 +207,7 @@ INSERT INTO audit_logs (submission_id, action, actor_id, actor_role, state_diff)
     ('sub-review', 'REVIEW_STARTED', 'usr-reviewer', 'COUNCIL_REVIEWER', JSON_OBJECT('status', 'IN_REVIEW')),
     ('sub-revision', 'REVISION_REQUESTED', 'usr-reviewer', 'COUNCIL_REVIEWER', JSON_OBJECT('status', 'REVISION_REQUESTED')),
     ('sub-approved', 'REPORT_APPROVED', 'usr-admin', 'COUNCIL_ADMIN', JSON_OBJECT('status', 'APPROVED')),
+    ('sub-edge-draft', 'DRAFT_CREATED', 'usr-sub-staten-island', 'EXTERNAL_SUBMITTER', JSON_OBJECT('status', 'DRAFT', 'total_budget', 44000.00, 'allocated_budget', 45000.00, 'is_balanced', FALSE)),
     ('sub-flagged', 'REPORT_SUBMITTED', 'usr-sub-brooklyn', 'EXTERNAL_SUBMITTER', JSON_OBJECT('status', 'SUBMITTED', 'total_budget', 32000.00, 'allocated_budget', 40000.00, 'is_balanced', FALSE));
 
 COMMIT;

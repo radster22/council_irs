@@ -8,6 +8,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     CHAR,
+    CheckConstraint,
     Date,
     DECIMAL,
     Enum,
@@ -146,6 +147,7 @@ class InitiativeOrganization(Base):
 
 class InitiativeRelationship(Base):
     __tablename__ = "initiative_relationships"
+    __table_args__ = (CheckConstraint("predecessor_id <> successor_id", name="chk_rel_distinct"),)
 
     predecessor_id: Mapped[str] = mapped_column(ForeignKey("initiatives.id", name="fk_rel_pred", ondelete="RESTRICT", onupdate="NO ACTION"), primary_key=True)
     successor_id: Mapped[str] = mapped_column(ForeignKey("initiatives.id", name="fk_rel_succ", ondelete="RESTRICT", onupdate="NO ACTION"), primary_key=True)
@@ -161,6 +163,7 @@ class ReportingCycle(Base):
     __table_args__ = (
         UniqueConstraint("initiative_id", "id", name="uq_cycle_init"),
         UniqueConstraint("initiative_id", "cycle_name", name="uq_cycle_name"),
+        CheckConstraint("start_date <= due_date", name="chk_cycle_dates"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -260,7 +263,10 @@ class Submission(Base):
 
 class BudgetLineItem(Base):
     __tablename__ = "budget_line_items"
-    __table_args__ = (UniqueConstraint("submission_id", "line_number", name="uq_line_item"),)
+    __table_args__ = (
+        UniqueConstraint("submission_id", "line_number", name="uq_line_item"),
+        CheckConstraint("line_number BETWEEN 1 AND 100", name="chk_line_number"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     submission_id: Mapped[str] = mapped_column(ForeignKey("submissions.id", name="fk_line_item_sub", ondelete="RESTRICT", onupdate="NO ACTION"), nullable=False)
@@ -319,6 +325,7 @@ class Attachment(Base):
         ForeignKeyConstraint(["submission_id"], ["submissions.id"], name="fk_att_sub", ondelete="RESTRICT", onupdate="NO ACTION"),
         ForeignKeyConstraint(["uploaded_by"], ["users.id"], name="fk_att_user", ondelete="RESTRICT", onupdate="NO ACTION"),
         UniqueConstraint("bucket_name", "object_key", name="uq_attachment_location"),
+        CheckConstraint("file_size_bytes > 0 AND file_size_bytes <= 26214400", name="chk_att_size"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)

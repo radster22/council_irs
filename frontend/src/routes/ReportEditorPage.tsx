@@ -14,6 +14,7 @@ type FormField = {
   maximum?: number;
   max_length?: number;
   max_words?: number;
+  visible_when?: { field_id: string; equals?: unknown; not_equals?: unknown };
 };
 
 function amountToCents(value: string): bigint | null {
@@ -73,6 +74,14 @@ export function ReportEditorPage() {
       ? user.role === 'COUNCIL_ADMIN' && submissionStatus !== 'DRAFT'
       : user.role === 'EXTERNAL_SUBMITTER' && ['DRAFT', 'REVISION_REQUESTED'].includes(submissionStatus)),
   );
+  const visibleFormFields = formFields.filter((field) => {
+    const condition = field.visible_when;
+    if (!condition) return true;
+    const sourceValue = formData[condition.field_id];
+    if (Object.prototype.hasOwnProperty.call(condition, 'equals')) return sourceValue === condition.equals;
+    if (Object.prototype.hasOwnProperty.call(condition, 'not_equals')) return sourceValue != null && sourceValue !== '' && sourceValue !== condition.not_equals;
+    return false;
+  });
 
   useEffect(() => {
     if (!token || !reportId) return;
@@ -286,9 +295,9 @@ export function ReportEditorPage() {
         <section id="report-step-1" className="scroll-mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-brand-600">Step 1 · Programmatic metrics and narrative</p>
           <h2 className="mb-4 text-xl font-semibold text-slate-900">Report questions</h2>
-          {formFields.length === 0 ? <p className="text-sm text-slate-500">This report has no configured narrative questions. Continue to the budget stage.</p> : null}
+          {visibleFormFields.length === 0 ? <p className="text-sm text-slate-500">No questions apply to the current responses. Continue to the budget stage.</p> : null}
           <div className="grid gap-4 md:grid-cols-2">
-            {formFields.map((field) => {
+            {visibleFormFields.map((field) => {
               const value = formData[field.id] == null ? '' : String(formData[field.id]);
               const label = field.label ?? field.id;
               const className = 'w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';

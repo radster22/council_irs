@@ -37,6 +37,21 @@ class AdminUserResponse(BaseModel):
     organization_ids: list[str] = Field(default_factory=list)
 
 
+class AdminUserCreateRequest(BaseModel):
+    email: str = Field(..., min_length=3, max_length=255, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    full_name: str = Field(..., min_length=1, max_length=255)
+    password: str = Field(..., min_length=12, max_length=72)
+    role: Literal["COUNCIL_ADMIN", "COUNCIL_REVIEWER", "EXTERNAL_SUBMITTER", "VIEW_ONLY"]
+    organization_eins: list[str] = Field(default_factory=list)
+
+
+class OrganizationCreateRequest(BaseModel):
+    ein: str = Field(..., pattern=r"^\d{2}-?\d{7}$")
+    legal_name: str = Field(..., min_length=1, max_length=255)
+    org_type: Literal["CBO", "CITY_AGENCY"]
+    borough: str | None = Field(default=None, max_length=50)
+
+
 class BudgetLineInput(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -131,6 +146,12 @@ class ReviewQueueItemResponse(BaseModel):
     is_balanced: bool
     updated_at: str | None = None
     is_incomplete: bool = False
+    validation_errors: list[str] = Field(default_factory=list)
+    organization_ein: str = ""
+    borough: str | None = None
+    fiscal_year: int
+    initiative_id: str
+    cycle_id: str
 
 
 class ReviewActionRequest(BaseModel):

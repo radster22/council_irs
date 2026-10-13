@@ -1,6 +1,6 @@
 # Agent Instructions
 
-Build and maintain a local demonstration of the NYC Council Initiative Reporting System for RFP PIN #102202709162026.
+Build and maintain a local demonstration of the NYC Council Initiative Reporting System.
 
 ## Canonical project guidance
 

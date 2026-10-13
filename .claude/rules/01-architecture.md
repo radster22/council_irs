@@ -10,6 +10,6 @@
 
 ## Local/production boundary
 
-The local demo uses MySQL, filesystem uploads, console notifications, and in-process tasks. It does not prove cloud authorization, FedRAMP/NIST compliance, production capacity/availability, perpetual retention operations, incident response, email delivery, vendor support, backup/recovery, or delivery schedule. The recorded hosting requirement includes conflicting internal-hosting and cloud/no-Council-server language; retain it as a production decision to resolve.
+The local demo uses MySQL, filesystem uploads, console notifications, and in-process tasks. It does not prove cloud authorization, FedRAMP/NIST compliance, production capacity/availability, perpetual retention operations, incident response, email delivery, vendor support, backup/recovery, or delivery schedule. Any production deployment must follow the hosting and compliance boundary in BR-026; deployment infrastructure remains outside this local-demo scope.
 
 Do not add cloud services, managed secrets, object storage, durable queues, production mail, or operational controls as part of a local feature by assumption.

@@ -73,17 +73,26 @@ export const api = {
   me: async (token: string) => apiRequest<AuthUser>('/api/auth/me', { method: 'GET' }, token),
   listUsers: async (token: string) => apiRequest<AdminUser[]>('/api/admin/users', { method: 'GET' }, token),
   listOrganizations: async (token: string) => apiRequest<{ id: string; ein: string; legal_name: string }[]>('/api/admin/organizations', { method: 'GET' }, token),
+  createUser: async (payload: { email: string; full_name: string; password: string; role: string; organization_eins: string[] }, token: string) =>
+    apiRequest<AdminUser>('/api/admin/users', { method: 'POST', body: JSON.stringify(payload) }, token),
+  createOrganization: async (payload: { ein: string; legal_name: string; org_type: 'CBO' | 'CITY_AGENCY'; borough: string }, token: string) =>
+    apiRequest<{ id: string; ein: string; legal_name: string }>('/api/admin/organizations', { method: 'POST', body: JSON.stringify(payload) }, token),
   updateUser: async (userId: string, payload: { role: string; is_active: boolean; organization_eins?: string[] }, token: string) =>
     apiRequest<AdminUser>(`/api/admin/users/${encodeURIComponent(userId)}`, { method: 'PATCH', body: JSON.stringify(payload) }, token),
   resetUserPassword: async (userId: string, password: string, token: string) =>
     apiRequest<void>(`/api/admin/users/${encodeURIComponent(userId)}/reset-password`, { method: 'POST', body: JSON.stringify({ password }) }, token),
   listSubmissions: async (token: string) =>
     apiRequest<SubmissionListItem[]>('/api/submissions', { method: 'GET' }, token),
-  reviewQueue: async (token: string, filters: { status?: string; query?: string; balanced?: boolean } = {}) => {
+  reviewQueue: async (token: string, filters: { status?: string; query?: string; balanced?: boolean; ein?: string; borough?: string; fiscal_year?: number; initiative?: string; cycle?: string } = {}) => {
     const params = new URLSearchParams();
     if (filters.status) params.set('status', filters.status);
     if (filters.query) params.set('query', filters.query);
     if (filters.balanced !== undefined) params.set('balanced', String(filters.balanced));
+    if (filters.ein) params.set('ein', filters.ein);
+    if (filters.borough) params.set('borough', filters.borough);
+    if (filters.fiscal_year) params.set('fiscal_year', String(filters.fiscal_year));
+    if (filters.initiative) params.set('initiative', filters.initiative);
+    if (filters.cycle) params.set('cycle', filters.cycle);
     return apiRequest<ReviewQueueItem[]>(`/api/submissions/review-queue?${params.toString()}`, { method: 'GET' }, token);
   },
   reviewSubmission: async (submissionId: string, action: 'START_REVIEW' | 'REQUEST_REVISION' | 'APPROVE' | 'REJECT', comment: string, token: string) =>

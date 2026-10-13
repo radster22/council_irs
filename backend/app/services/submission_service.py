@@ -134,6 +134,11 @@ def list_review_queue(
     status_filter: str | None = None,
     query: str | None = None,
     balanced: bool | None = None,
+    ein: str | None = None,
+    borough: str | None = None,
+    fiscal_year: int | None = None,
+    initiative: str | None = None,
+    cycle: str | None = None,
 ) -> list[dict[str, object]]:
     if user.role not in {"COUNCIL_ADMIN", "COUNCIL_REVIEWER", "VIEW_ONLY"}:
         raise SubmissionError("Council access is required.", 403)
@@ -150,6 +155,10 @@ def list_review_queue(
             Submission.form_data,
             Submission.initiative_id,
             Submission.template_version,
+            Organization.ein,
+            Organization.borough,
+            Initiative.fiscal_year,
+            ReportingCycle.id,
         )
         .join(Initiative, Initiative.id == Submission.initiative_id)
         .join(Organization, Organization.id == Submission.organization_id)
@@ -168,17 +177,32 @@ def list_review_queue(
         ))
     if balanced is not None:
         statement = statement.where(Submission.is_balanced.is_(balanced))
+    if ein and ein.strip():
+        statement = statement.where(Organization.ein.like(f"%{ein.strip()}%"))
+    if borough and borough.strip():
+        statement = statement.where(Organization.borough == borough.strip())
+    if fiscal_year is not None:
+        statement = statement.where(Initiative.fiscal_year == fiscal_year)
+    if initiative and initiative.strip():
+        statement = statement.where(Initiative.name.like(f"%{initiative.strip()}%"))
+    if cycle and cycle.strip():
+        statement = statement.where(ReportingCycle.cycle_name.like(f"%{cycle.strip()}%"))
     result: list[dict[str, object]] = []
     for row in db.execute(statement).all():
         incomplete = False
+        validation_errors: list[str] = []
         try:
             template = db.scalar(select(FormTemplate).where(
                 FormTemplate.initiative_id == row[9], FormTemplate.version == row[10]
             ))
             if template is None:
                 incomplete = True
+                validation_errors.append("The submission's form template is missing.")
             else:
-                validate_form_data(template.schema_definition, row[8] or {})
+                try:
+                    validate_form_data(template.schema_definition, row[8] or {})
+                except SubmissionError as exc:
+                    validation_errors.append(exc.detail)
                 line_rows = db.scalars(select(BudgetLineItem).where(
                     BudgetLineItem.submission_id == row[0]
                 )).all()
@@ -187,8 +211,12 @@ def list_review_queue(
                      "actual_amount": str(line.actual_amount) if line.actual_amount is not None else None}
                     for line in line_rows
                 ], require_positive=True, require_category=True)
-                incomplete = not bool(budget_check["is_valid"]) or not bool(row[6])
-        except SubmissionError:
+                validation_errors.extend(str(error) for error in budget_check["errors"])
+                if not bool(row[6]):
+                    validation_errors.append("Budget does not reconcile to the configured allocation.")
+                incomplete = bool(validation_errors)
+        except SubmissionError as exc:
+            validation_errors.append(exc.detail)
             incomplete = True
         result.append({
             "submission_id": row[0],
@@ -200,6 +228,12 @@ def list_review_queue(
             "is_balanced": bool(row[6]),
             "updated_at": row[7].isoformat() if row[7] else None,
             "is_incomplete": incomplete,
+            "validation_errors": validation_errors,
+            "organization_ein": row[11],
+            "borough": row[12],
+            "fiscal_year": row[13],
+            "initiative_id": row[9],
+            "cycle_id": row[14],
         })
     return result
 
@@ -604,6 +638,17 @@ def validate_form_data(schema: dict[str, object], form_data: dict[str, object]) 
         if not isinstance(field, dict) or not isinstance(field.get("id"), str):
             errors.append("The published form contains an invalid field definition.")
             continue
+        condition = field.get("visible_when")
+        if condition is not None:
+            if (not isinstance(condition, dict) or not isinstance(condition.get("field_id"), str)
+                    or ("equals" in condition) == ("not_equals" in condition)):
+                errors.append("The published form contains an invalid conditional field rule.")
+                continue
+            source_value = form_data.get(condition["field_id"])
+            if "equals" in condition and source_value != condition["equals"]:
+                continue
+            if "not_equals" in condition and (source_value is None or source_value == "" or source_value == condition["not_equals"]):
+                continue
         field_id = str(field["id"])
         label = str(field.get("label") or field_id)
         value = form_data.get(field_id)

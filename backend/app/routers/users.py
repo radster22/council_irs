@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import delete, func, select
@@ -11,9 +12,47 @@ from app.core.dependencies import require_roles
 from app.core.security import hash_password
 from app.db import get_db
 from app.models import Organization, User, UserOrganization
-from app.schemas import AdminPasswordResetRequest, AdminUserResponse, AdminUserUpdateRequest
+from app.schemas import AdminPasswordResetRequest, AdminUserCreateRequest, AdminUserResponse, AdminUserUpdateRequest
 
 router = APIRouter(prefix="/api/admin/users", tags=["administration"])
+
+
+@router.post("", response_model=AdminUserResponse, status_code=201)
+def create_user(
+    payload: AdminUserCreateRequest,
+    _: User = Depends(require_roles("COUNCIL_ADMIN")),
+    db: Session = Depends(get_db),
+) -> AdminUserResponse:
+    email = payload.email.strip().lower()
+    full_name = payload.full_name.strip()
+    if not email or not full_name:
+        raise HTTPException(status_code=422, detail="Email and full name cannot be blank.")
+    normalized_eins = list(dict.fromkeys(value.strip() for value in payload.organization_eins if value.strip()))
+    if payload.role == "EXTERNAL_SUBMITTER" and not normalized_eins:
+        raise HTTPException(status_code=422, detail="External submitters must have at least one organization assignment.")
+    if payload.role != "EXTERNAL_SUBMITTER" and normalized_eins:
+        raise HTTPException(status_code=422, detail="Only external submitters can be assigned organizations.")
+    organizations = db.scalars(select(Organization).where(
+        Organization.ein.in_(normalized_eins), Organization.status == "ACTIVE"
+    )).all() if normalized_eins else []
+    if len(organizations) != len(normalized_eins):
+        raise HTTPException(status_code=422, detail="One or more EINs do not identify an active organization.")
+    try:
+        password_hash = hash_password(payload.password)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    user = User(id=str(uuid4()), email=email, password_hash=password_hash, full_name=full_name,
+                role=payload.role, is_active=True)
+    db.add(user)
+    for index, organization in enumerate(organizations):
+        db.add(UserOrganization(user_id=user.id, organization_id=organization.id, is_primary=index == 0))
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="An account with that email already exists.") from exc
+    return AdminUserResponse(id=user.id, email=user.email, full_name=user.full_name, role=user.role,
+                             is_active=user.is_active, organization_ids=[organization.id for organization in organizations])
 
 
 @router.get("", response_model=list[AdminUserResponse])

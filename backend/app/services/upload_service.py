@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from hashlib import sha256
+from io import BytesIO
 from pathlib import Path
 from uuid import uuid4
+from zipfile import BadZipFile, ZipFile, is_zipfile
 
 from fastapi import UploadFile
 
@@ -41,6 +43,31 @@ def _safe_filename(filename: str) -> str:
     return candidate
 
 
+def _validate_file_signature(suffix: str, content: bytes) -> None:
+    signatures = {
+        ".pdf": content.startswith(b"%PDF-"),
+        ".jpg": content.startswith(b"\xff\xd8\xff"),
+        ".jpeg": content.startswith(b"\xff\xd8\xff"),
+        ".png": content.startswith(b"\x89PNG\r\n\x1a\n"),
+        ".xls": content.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"),
+        ".doc": content.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"),
+    }
+    if suffix in signatures and not signatures[suffix]:
+        raise ValueError("File content does not match its extension.")
+    if suffix in {".xlsx", ".docx"}:
+        required_member = "xl/workbook.xml" if suffix == ".xlsx" else "word/document.xml"
+        try:
+            if not is_zipfile(BytesIO(content)):
+                raise ValueError("File content does not match its extension.")
+            with ZipFile(BytesIO(content)) as archive:
+                if required_member not in archive.namelist():
+                    raise ValueError("File content does not match its extension.")
+        except BadZipFile as exc:
+            raise ValueError("File content does not match its extension.") from exc
+    if suffix in {".csv", ".txt"} and b"\x00" in content:
+        raise ValueError("Text file content contains binary data.")
+
+
 async def save_uploaded_file(submission_id: str, upload: UploadFile) -> dict[str, object]:
     safe_submission_id = sanitize_submission_id(submission_id)
 
@@ -68,6 +95,7 @@ async def save_uploaded_file(submission_id: str, upload: UploadFile) -> dict[str
 
     if not content:
         raise ValueError("Uploaded file is empty.")
+    _validate_file_signature(suffix, bytes(content))
 
     upload_root = UPLOAD_ROOT.resolve()
     target_dir = (upload_root / safe_submission_id).resolve()

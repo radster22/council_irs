@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import io
 import zipfile
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
@@ -32,6 +32,7 @@ from app.models import (
     UserOrganization,
 )
 from app.services.upload_service import save_uploaded_file
+from app.services.submission_service import SubmissionError, validate_form_data
 
 
 def test_upload_storage_root_is_repository_dot_uploads() -> None:
@@ -261,7 +262,7 @@ def test_upload_attachment_accepts_valid_file(submission_context) -> None:
 
     response = client.post(
         "/api/submissions/demo-report/attachments",
-        files={"file": ("report.pdf", io.BytesIO(b"hello world"), "application/pdf")},
+        files={"file": ("report.pdf", io.BytesIO(b"%PDF-1.7\nTest document"), "application/pdf")},
         headers={"Authorization": f"Bearer {token}"},
     )
 
@@ -269,21 +270,21 @@ def test_upload_attachment_accepts_valid_file(submission_context) -> None:
     body = response.json()
     assert body["submission_id"] == "demo-report"
     assert body["original_filename"] == "report.pdf"
-    assert body["file_size_bytes"] == 11
+    assert body["file_size_bytes"] == len(b"%PDF-1.7\nTest document")
     assert body["attachment_id"]
     assert "stored_path" not in body
 
     with submission_context[2]() as db:
         attachment = db.query(Attachment).one()
         assert attachment.submission_id == "demo-report"
-        assert attachment.file_size_bytes == 11
+        assert attachment.file_size_bytes == len(b"%PDF-1.7\nTest document")
 
     download = client.get(
         f"/api/submissions/demo-report/attachments/{body['attachment_id']}",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert download.status_code == 200
-    assert download.content == b"hello world"
+    assert download.content == b"%PDF-1.7\nTest document"
     assert "report.pdf" in download.headers["content-disposition"]
 
 
@@ -292,7 +293,7 @@ def test_uploading_same_file_twice_creates_distinct_attachment_records(submissio
     for _ in range(2):
         response = client.post(
             "/api/submissions/demo-report/attachments",
-            files={"file": ("report.pdf", io.BytesIO(b"same contents"), "application/pdf")},
+            files={"file": ("report.pdf", io.BytesIO(b"%PDF-1.7\nsame contents"), "application/pdf")},
             headers={"Authorization": f"Bearer {token}"},
         )
         assert response.status_code == 200
@@ -334,6 +335,17 @@ def test_upload_rejects_extension_and_mime_mismatch(submission_context) -> None:
     )
     assert response.status_code == 400
     assert "extension and content type" in response.json()["detail"]
+
+
+def test_upload_rejects_content_that_does_not_match_declared_file_type(submission_context) -> None:
+    client, token, _ = submission_context
+    response = client.post(
+        "/api/submissions/demo-report/attachments",
+        files={"file": ("report.pdf", io.BytesIO(b"plain text pretending to be a PDF"), "application/pdf")},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 400
+    assert "content does not match" in response.json()["detail"]
 
 
 def test_council_admin_edit_creates_new_snapshot_and_audit_event(submission_context) -> None:
@@ -440,6 +452,81 @@ def test_admin_can_change_roles_and_reset_an_existing_password(submission_contex
     assert login.json()["role"] == "COUNCIL_REVIEWER"
 
 
+def test_admin_can_create_organization_and_scoped_submitter(submission_context) -> None:
+    client, _, test_session = submission_context
+    with test_session() as db:
+        db.add(User(id="admin-provision", email="provision-admin@example.org",
+                    password_hash=hash_password("LocalTestPassword123!"), full_name="Council Admin",
+                    role="COUNCIL_ADMIN", is_active=True))
+        db.commit()
+    token = create_access_token("admin-provision", role="COUNCIL_ADMIN")
+
+    organization_response = client.post("/api/admin/organizations", json={
+        "ein": "987654321", "legal_name": "New Test Organization", "org_type": "CBO", "borough": "Queens",
+    }, headers={"Authorization": f"Bearer {token}"})
+    assert organization_response.status_code == 201
+    organization = organization_response.json()
+    assert organization["ein"] == "98-7654321"
+
+    account_response = client.post("/api/admin/users", json={
+        "email": "new.submitter@example.org", "full_name": "New Submitter",
+        "password": "NewLocalPassword123!", "role": "EXTERNAL_SUBMITTER",
+        "organization_eins": [organization["ein"]],
+    }, headers={"Authorization": f"Bearer {token}"})
+    assert account_response.status_code == 201
+    assert account_response.json()["organization_ids"] == [organization["id"]]
+
+    login = client.post("/api/auth/login", json={
+        "email": "new.submitter@example.org", "password": "NewLocalPassword123!",
+    })
+    assert login.status_code == 200
+    assert login.json()["role"] == "EXTERNAL_SUBMITTER"
+
+
+def test_admin_cannot_create_submitter_without_active_organization(submission_context) -> None:
+    client, _, test_session = submission_context
+    with test_session() as db:
+        db.add(User(id="admin-provision-check", email="provision-check-admin@example.org",
+                    password_hash=hash_password("LocalTestPassword123!"), full_name="Council Admin",
+                    role="COUNCIL_ADMIN", is_active=True))
+        db.commit()
+    token = create_access_token("admin-provision-check", role="COUNCIL_ADMIN")
+    response = client.post("/api/admin/users", json={
+        "email": "unscoped.submitter@example.org", "full_name": "Unscoped Submitter",
+        "password": "NewLocalPassword123!", "role": "EXTERNAL_SUBMITTER", "organization_eins": [],
+    }, headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 422
+
+
+def test_review_queue_supports_registry_filters_and_explains_validation_errors(submission_context) -> None:
+    client, _, test_session = submission_context
+    with test_session() as db:
+        organization = db.get(Organization, "org-1")
+        assert organization is not None
+        organization.borough = "Queens"
+        db.add(User(id="review-filter", email="review-filter@example.org",
+                    password_hash=hash_password("LocalTestPassword123!"), full_name="Council Reviewer",
+                    role="COUNCIL_REVIEWER", is_active=True))
+        db.commit()
+    token = create_access_token("review-filter", role="COUNCIL_REVIEWER")
+
+    response = client.get(
+        "/api/submissions/review-queue?ein=1234&borough=Queens&fiscal_year=2026&initiative=Test%20Initiative&cycle=2026%20Q1",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    item = response.json()[0]
+    assert item["organization_ein"] == "1234567890"
+    assert item["borough"] == "Queens"
+    assert item["fiscal_year"] == 2026
+    assert item["is_incomplete"] is True
+    assert item["validation_errors"]
+    no_match = client.get("/api/submissions/review-queue?ein=999999", headers={"Authorization": f"Bearer {token}"})
+    assert no_match.status_code == 200
+    assert no_match.json() == []
+
+
 def test_admin_xlsx_export_produces_an_excel_workbook_when_dependencies_are_installed(submission_context) -> None:
     pytest.importorskip("pandas")
     pytest.importorskip("openpyxl")
@@ -453,6 +540,27 @@ def test_admin_xlsx_export_produces_an_excel_workbook_when_dependencies_are_inst
     response = client.get("/api/admin/exports/xlsx", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
     assert response.content.startswith(b"PK")
+
+
+def test_admin_open_obligations_mark_past_due_assignments(submission_context) -> None:
+    client, _, test_session = submission_context
+    today = date.today()
+    with test_session() as db:
+        db.add(User(id="admin-obligations", email="obligations-admin@example.org",
+                    password_hash=hash_password("LocalTestPassword123!"), full_name="Council Admin",
+                    role="COUNCIL_ADMIN", is_active=True))
+        db.add(ReportingCycle(
+            id="overdue-cycle", initiative_id="initiative-1", cycle_name="Overdue cycle",
+            start_date=today - timedelta(days=30), due_date=today - timedelta(days=1), status="OPEN",
+        ))
+        db.commit()
+
+    token = create_access_token("admin-obligations", role="COUNCIL_ADMIN")
+    response = client.get("/api/admin/obligations", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200
+    obligation = next(item for item in response.json() if item["cycle_id"] == "overdue-cycle")
+    assert obligation["is_overdue"] is True
 
 
 def test_available_report_can_be_started_from_database_assignment(submission_context) -> None:
@@ -533,6 +641,18 @@ def test_submission_rejects_missing_required_template_field(submission_context) 
         assert submission is not None
         assert submission.status == "DRAFT"
         assert db.query(SubmissionVersion).filter_by(submission_id="demo-report").count() == 0
+
+
+def test_conditional_required_field_is_only_validated_when_visible() -> None:
+    schema = {"fields": [
+        {"id": "has_additional_program", "type": "boolean", "required": True},
+        {"id": "additional_program_details", "type": "textarea", "required": True,
+         "visible_when": {"field_id": "has_additional_program", "equals": True}},
+    ]}
+
+    validate_form_data(schema, {"has_additional_program": False})
+    with pytest.raises(SubmissionError, match="Required field is missing: additional_program_details"):
+        validate_form_data(schema, {"has_additional_program": True})
 
 
 def test_submission_requires_budget_to_reconcile_to_allocated_amount(submission_context) -> None:

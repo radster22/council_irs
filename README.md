@@ -4,8 +4,11 @@ Local demonstration for NYC Council Initiative Reporting System RFP PIN #1022027
 
 ## Portals
 
-- **External submitter:** organization-scoped assignments, draft reports, dynamic questions, budget lines, supporting uploads, and submission history.
-- **Council Finance:** searchable review queue, report detail, review dispositions, audit history, and admin-only user listing.
+- **External submitter:** organization-scoped assignments, autosaved drafts, dynamic questions, a 1–100 row budget grid with budgeted and actual amounts, allowlisted supporting uploads, submission history, and printable receipts.
+- **Council Finance:** searchable submission and incomplete-report queues, open-obligation triage, review dispositions, version and audit history, analytics, CSV/XLSX exports, and print-ready report views.
+- **Council administrator:** user role and active-state management, password resets, initiative/cycle/organization assignment and versioned form configuration, plus annual rollover with lineage.
+
+The local demo logs submission confirmation metadata to the backend console. It does not send email. The print views can be saved as PDF through the browser's print dialog. XLSX export uses pandas and openpyxl from `requirements.txt`.
 
 See [application requirements](.claude/rules/02-business-rules.md) for the portal workflows and reporting capabilities. See [ProductionUpdate.md](ProductionUpdate.md) for technology changes needed to move the local stack to production.
 

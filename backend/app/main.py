@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.db import db_healthcheck, init_db
 from app.routers.auth import router as auth_router
+from app.routers.admin import router as admin_router
 from app.routers.budgets import router as budgets_router
 from app.routers.submissions import router as submissions_router
 from app.routers.users import router as users_router
@@ -30,6 +31,7 @@ app.include_router(auth_router)
 app.include_router(budgets_router)
 app.include_router(submissions_router)
 app.include_router(users_router)
+app.include_router(admin_router)
 
 
 @app.get("/health")

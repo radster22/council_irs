@@ -31,7 +31,9 @@ export type LoginResponse = {
 
 export type BudgetLine = {
   category: string;
+  description?: string | null;
   amount: string;
+  actual_amount?: string | null;
 };
 
 export type BudgetValidationSummary = {
@@ -55,6 +57,7 @@ export type SaveSubmissionResponse = {
   is_balanced: boolean;
   line_count: number;
   is_valid: boolean;
+  validation_errors: string[];
   saved_by: string;
 };
 
@@ -95,11 +98,13 @@ export type SubmissionDetail = {
   total_budget: string;
   is_balanced: boolean;
   audit_history: { action: string; actor_role: Role; created_at: string | null; state_diff: Record<string, unknown> }[];
+  versions: { version_number: number; template_version: number; submitted_at: string | null; reviewer_notes: string | null; form_snapshot: Record<string, unknown>; budget_snapshot: Record<string, unknown> }[];
 };
 
 export type ReviewQueueItem = SubmissionListItem & {
   is_balanced: boolean;
   updated_at: string | null;
+  is_incomplete: boolean;
 };
 
 export type AttachmentSummary = {
@@ -130,4 +135,32 @@ export type SubmissionSummary = {
   cycle_name: string;
   status: string;
   total_budget: string;
+};
+
+export type InitiativeAdminItem = InitiativeSummary & {
+  cycles: { id: string; cycle_name: string; start_date: string; due_date: string; status: string }[];
+  assignments: { organization_id: string; ein: string; legal_name: string; awarded_amount: string }[];
+  templates: { id: string; version: number; is_published: boolean; schema_definition: Record<string, unknown> }[];
+  lineage: { relationship_type: string; direction: 'predecessor' | 'successor'; initiative_id: string; initiative_code: string }[];
+};
+
+export type AdminAnalytics = {
+  status_counts: Record<string, number>;
+  allocated_budget: string;
+  reported_budget: string;
+  submitted_count: number;
+  balanced_count: number;
+  borough_totals: { borough: string; total: string }[];
+};
+
+export type OpenObligation = {
+  initiative_id: string;
+  initiative_name: string;
+  organization_id: string;
+  organization_name: string;
+  borough: string | null;
+  cycle_id: string;
+  cycle_name: string;
+  due_date: string;
+  awarded_amount: string;
 };

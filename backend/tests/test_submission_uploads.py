@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import zipfile
 from datetime import date
 from pathlib import Path
 
@@ -19,6 +20,7 @@ from app.services import upload_service
 from app.models import (
     Attachment,
     AuditLog,
+    BudgetLineItem,
     FormTemplate,
     Initiative,
     InitiativeOrganization,
@@ -299,6 +301,158 @@ def test_uploading_same_file_twice_creates_distinct_attachment_records(submissio
         attachments = db.query(Attachment).order_by(Attachment.id).all()
         assert len(attachments) == 2
         assert attachments[0].object_key != attachments[1].object_key
+
+
+def test_draft_autosave_preserves_blank_budget_cells_without_blocking(submission_context) -> None:
+    client, token, test_session = submission_context
+    response = client.post(
+        "/api/submissions/demo-report/save",
+        json={"status": "DRAFT", "form_data": {}, "budget_lines": [
+            {"category": "", "description": "In progress", "amount": "", "actual_amount": ""},
+        ]},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    assert response.json()["is_valid"] is False
+    assert response.json()["validation_errors"]
+    detail = client.get("/api/submissions/demo-report", headers={"Authorization": f"Bearer {token}"})
+    assert detail.status_code == 200
+    assert detail.json()["budget_lines"][0]["amount"] == ""
+    assert detail.json()["form_data"] == {}
+    with test_session() as db:
+        line = db.query(BudgetLineItem).one()
+        assert line.budgeted_amount == 0
+        assert line.description == "In progress"
+
+
+def test_upload_rejects_extension_and_mime_mismatch(submission_context) -> None:
+    client, token, _ = submission_context
+    response = client.post(
+        "/api/submissions/demo-report/attachments",
+        files={"file": ("report.pdf", io.BytesIO(b"contents"), "text/csv")},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 400
+    assert "extension and content type" in response.json()["detail"]
+
+
+def test_council_admin_edit_creates_new_snapshot_and_audit_event(submission_context) -> None:
+    client, _, test_session = submission_context
+    with test_session() as db:
+        db.add(User(id="admin-edit", email="admin-edit@example.org",
+                    password_hash=hash_password("LocalTestPassword123!"), full_name="Council Admin",
+                    role="COUNCIL_ADMIN", is_active=True))
+        submission = db.get(Submission, "demo-report")
+        assert submission is not None
+        submission.status = "APPROVED"
+        submission.form_data = {"agency_name": "Original Agency"}
+        submission.total_budget = "1500.50"
+        submission.is_balanced = True
+        db.commit()
+    token = create_access_token("admin-edit", role="COUNCIL_ADMIN")
+    response = client.post("/api/submissions/demo-report/admin-edit", json={
+        "form_data": {"agency_name": "Updated Agency"},
+        "budget_lines": [{"category": "Personnel", "description": "Coordinator", "amount": "1500.50", "actual_amount": "1200.00"}],
+        "comment": "Corrected based on approved financial documentation.",
+    }, headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    assert response.json()["status"] == "APPROVED"
+    with test_session() as db:
+        version = db.query(SubmissionVersion).filter_by(submission_id="demo-report").one()
+        assert version.form_snapshot == {"agency_name": "Updated Agency"}
+        assert version.budget_snapshot["lines"][0]["actual_amount"] == "1200.00"
+        assert version.reviewer_notes.startswith("Corrected")
+        assert db.query(AuditLog).filter_by(submission_id="demo-report", action="ADMIN_EDIT").count() == 1
+        line = db.query(BudgetLineItem).one()
+        assert line.description == "Coordinator"
+        assert line.actual_amount == 1200
+
+
+def test_admin_rollover_clones_connected_configuration(submission_context) -> None:
+    client, _, test_session = submission_context
+    with test_session() as db:
+        db.add(User(id="admin-rollover", email="rollover@example.org",
+                    password_hash=hash_password("LocalTestPassword123!"), full_name="Council Admin",
+                    role="COUNCIL_ADMIN", is_active=True))
+        db.commit()
+    token = create_access_token("admin-rollover", role="COUNCIL_ADMIN")
+    response = client.post("/api/admin/rollover", json={
+        "source_fiscal_year": 2026, "destination_fiscal_year": 2027,
+    }, headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    assert response.json() == {"initiatives_created": 1, "cycles_created": 1, "templates_created": 1, "assignments_created": 1}
+    with test_session() as db:
+        clone = db.query(Initiative).filter_by(fiscal_year=2027).one()
+        assert clone.code == "TEST-1-FY2027"
+        assert db.query(InitiativeOrganization).filter_by(initiative_id=clone.id).count() == 1
+        cycle = db.query(ReportingCycle).filter_by(initiative_id=clone.id).one()
+        assert cycle.status == "UPCOMING"
+        assert cycle.start_date.year == 2027
+        assert db.query(FormTemplate).filter_by(initiative_id=clone.id).count() == 1
+        cycle_id = cycle.id
+        initiative_id = clone.id
+    opened = client.patch(f"/api/admin/cycles/{cycle_id}", json={"status": "OPEN"},
+                          headers={"Authorization": f"Bearer {token}"})
+    assert opened.status_code == 200
+    retired = client.patch(f"/api/admin/initiatives/{initiative_id}", json={"status": "RETIRED"},
+                           headers={"Authorization": f"Bearer {token}"})
+    assert retired.status_code == 200
+
+
+def test_admin_csv_export_is_a_downloadable_three_table_bundle(submission_context) -> None:
+    client, _, test_session = submission_context
+    with test_session() as db:
+        db.add(User(id="admin-export", email="export@example.org",
+                    password_hash=hash_password("LocalTestPassword123!"), full_name="Council Admin",
+                    role="COUNCIL_ADMIN", is_active=True))
+        db.commit()
+    token = create_access_token("admin-export", role="COUNCIL_ADMIN")
+    response = client.get("/api/admin/exports/csv", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(response.content)) as bundle:
+        assert set(bundle.namelist()) == {"submissions.csv", "budget_line_items.csv", "attachments.csv"}
+
+
+def test_admin_can_change_roles_and_reset_an_existing_password(submission_context) -> None:
+    client, _, test_session = submission_context
+    with test_session() as db:
+        db.add(User(id="admin-users", email="users-admin@example.org",
+                    password_hash=hash_password("LocalTestPassword123!"), full_name="Council Admin",
+                    role="COUNCIL_ADMIN", is_active=True))
+        db.commit()
+    token = create_access_token("admin-users", role="COUNCIL_ADMIN")
+    denied = client.patch("/api/admin/users/user-1", json={
+        "role": "EXTERNAL_SUBMITTER", "is_active": True, "organization_eins": [],
+    }, headers={"Authorization": f"Bearer {token}"})
+    assert denied.status_code == 422
+    updated = client.patch("/api/admin/users/user-1", json={
+        "role": "COUNCIL_REVIEWER", "is_active": True, "organization_eins": [],
+    }, headers={"Authorization": f"Bearer {token}"})
+    assert updated.status_code == 200
+    reset = client.post("/api/admin/users/user-1/reset-password", json={
+        "password": "NewLocalPassword123!",
+    }, headers={"Authorization": f"Bearer {token}"})
+    assert reset.status_code == 204
+    login = client.post("/api/auth/login", json={
+        "email": "submitter@example.org", "password": "NewLocalPassword123!",
+    })
+    assert login.status_code == 200
+    assert login.json()["role"] == "COUNCIL_REVIEWER"
+
+
+def test_admin_xlsx_export_produces_an_excel_workbook_when_dependencies_are_installed(submission_context) -> None:
+    pytest.importorskip("pandas")
+    pytest.importorskip("openpyxl")
+    client, _, test_session = submission_context
+    with test_session() as db:
+        db.add(User(id="admin-xlsx", email="xlsx-admin@example.org",
+                    password_hash=hash_password("LocalTestPassword123!"), full_name="Council Admin",
+                    role="COUNCIL_ADMIN", is_active=True))
+        db.commit()
+    token = create_access_token("admin-xlsx", role="COUNCIL_ADMIN")
+    response = client.get("/api/admin/exports/xlsx", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    assert response.content.startswith(b"PK")
 
 
 def test_available_report_can_be_started_from_database_assignment(submission_context) -> None:

@@ -63,6 +63,10 @@ export function ReviewDetailPage() {
         <p className="text-sm font-medium uppercase tracking-[0.2em] text-brand-500">Council review</p>
         <h1 className="mt-2 text-3xl font-bold text-slate-900">{submission.initiative_name}</h1>
         <p className="mt-2 text-slate-600">{submission.organization_name} · {submission.cycle_name}</p>
+        <div className="no-print mt-3 flex gap-3">
+          <button type="button" onClick={() => window.print()} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700">Print / Save PDF</button>
+          {user?.role === 'COUNCIL_ADMIN' && submission.status !== 'DRAFT' ? <Link to={`/review/${encodeURIComponent(submissionId)}/edit`} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white">Edit with audit version</Link> : null}
+        </div>
       </header>
 
       <div className="grid gap-4 md:grid-cols-4">
@@ -77,8 +81,10 @@ export function ReviewDetailPage() {
           {fields.map((field) => <div key={field.id} className="rounded-lg bg-slate-50 p-4"><dt className="text-sm font-medium text-slate-500">{field.label ?? field.id}</dt><dd className="mt-1 whitespace-pre-wrap text-sm text-slate-900">{String(submission.form_data[field.id] ?? '—')}</dd></div>)}
         </dl>
         <h3 className="mt-6 font-semibold text-slate-900">Budget lines</h3>
-        <div className="mt-2 divide-y divide-slate-100">
-          {submission.budget_lines.map((line, index) => <div key={`${line.category}-${index}`} className="flex justify-between gap-4 py-3 text-sm"><span>{line.category}</span><span>${line.amount}</span></div>)}
+        <div className="mt-2 overflow-x-auto">
+          <table className="w-full min-w-[620px] text-left text-sm"><thead><tr className="border-b border-slate-200 text-xs uppercase text-slate-500"><th className="py-2">Line</th><th>Category</th><th>Description</th><th>Budgeted</th><th>Actual</th></tr></thead><tbody>
+          {submission.budget_lines.map((line, index) => <tr key={`${line.category}-${index}`} className="border-b border-slate-100"><td className="py-2">{index + 1}</td><td>{line.category}</td><td>{line.description || '—'}</td><td>${line.amount}</td><td>{line.actual_amount ? `$${line.actual_amount}` : '—'}</td></tr>)}
+          </tbody></table>
           {!submission.budget_lines.length ? <p className="py-3 text-sm text-slate-500">No budget lines recorded.</p> : null}
         </div>
         <h3 className="mt-6 font-semibold text-slate-900">Supporting documents</h3>
@@ -104,6 +110,14 @@ export function ReviewDetailPage() {
         </div>
         {error ? <p className="mt-3 text-sm text-red-700">{error}</p> : null}{message ? <p className="mt-3 text-sm text-emerald-700">{message}</p> : null}
       </section> : null}
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-6">
+        <h2 className="text-lg font-semibold text-slate-900">Submission versions</h2>
+        <ol className="mt-3 space-y-3">
+          {submission.versions.map((version) => <li key={version.version_number} className="border-l-2 border-brand-300 pl-4 text-sm"><div className="font-medium text-slate-800">Version {version.version_number} · Form version {version.template_version}</div><div className="text-xs text-slate-500">{version.submitted_at ?? 'Time unavailable'}</div>{version.reviewer_notes ? <p className="mt-1 whitespace-pre-wrap text-slate-700">{version.reviewer_notes}</p> : null}<details className="mt-2"><summary className="cursor-pointer text-brand-700">View immutable snapshot</summary><pre className="mt-2 max-h-96 overflow-auto rounded-lg bg-slate-50 p-3 text-xs">{JSON.stringify({ form: version.form_snapshot, budget: version.budget_snapshot }, null, 2)}</pre></details></li>)}
+          {!submission.versions.length ? <li className="text-sm text-slate-500">No immutable submission snapshots recorded.</li> : null}
+        </ol>
+      </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-6">
         <h2 className="text-lg font-semibold text-slate-900">Audit history</h2>

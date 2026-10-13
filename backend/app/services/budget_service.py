@@ -16,6 +16,7 @@ def validate_budget_lines(
     normalized = list(lines)
     errors: list[str] = []
     total = Decimal("0.00")
+    actual_total = Decimal("0.00")
 
     if not normalized and require_positive:
         return {
@@ -66,12 +67,34 @@ def validate_budget_lines(
             continue
         total += amount
 
+        raw_actual = item.get("actual_amount")
+        if raw_actual not in (None, ""):
+            try:
+                actual = Decimal(str(raw_actual))
+            except (InvalidOperation, TypeError, ValueError):
+                errors.append(f"Line {index}: actual amount must be numeric.")
+                continue
+            if not actual.is_finite() or actual < 0:
+                errors.append(f"Line {index}: actual amount must be finite and non-negative.")
+                continue
+            try:
+                if actual.quantize(Decimal("0.01")) != actual or actual > MAX_BUDGET_AMOUNT:
+                    errors.append(f"Line {index}: actual amount exceeds supported currency precision.")
+                    continue
+            except InvalidOperation:
+                errors.append(f"Line {index}: actual amount exceeds supported precision.")
+                continue
+            actual_total += actual
+            if actual_total > MAX_BUDGET_AMOUNT:
+                errors.append("Actual budget total exceeds the supported maximum.")
+
     if require_positive and total <= 0:
         errors.append("Budget total must be greater than zero.")
 
     return {
         "line_count": len(normalized),
         "total": str(total.quantize(Decimal("0.01"))),
+        "actual_total": str(actual_total.quantize(Decimal("0.01"))),
         "is_valid": not errors,
         "errors": errors,
     }

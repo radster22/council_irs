@@ -5,8 +5,20 @@ import { api } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import type { ReviewQueueItem } from '../types';
 
+function toCents(value: string): bigint {
+  const [whole, fraction = ''] = value.split('.');
+  if (!/^\d+$/.test(whole) || !/^\d{0,2}$/.test(fraction)) return 0n;
+  return BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0'));
+}
+
+function barWidth(value: string, maximum: string): number {
+  const max = toCents(maximum);
+  if (max === 0n) return 0;
+  return Number((toCents(value) * 10000n) / max) / 100;
+}
+
 export function ReviewPage() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('');
   const [unbalancedOnly, setUnbalancedOnly] = useState(false);
@@ -23,6 +35,23 @@ export function ReviewPage() {
       });
     },
   });
+  const { data: analytics } = useQuery({ queryKey: ['admin-analytics', token], enabled: Boolean(token), queryFn: () => api.getAnalytics(token!) });
+  const { data: obligations = [] } = useQuery({ queryKey: ['open-obligations', token], enabled: Boolean(token), queryFn: () => api.getOpenObligations(token!) });
+
+  const downloadExport = async (kind: 'csv' | 'xlsx') => {
+    if (!token) return;
+    try {
+      const blob = await api.downloadExport(kind, token);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = kind === 'csv' ? 'council-reporting-csv.zip' : 'council-reporting.xlsx';
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : 'Export failed.');
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -32,8 +61,41 @@ export function ReviewPage() {
           <h1 className="mt-2 text-3xl font-bold text-slate-900">Submission oversight</h1>
           <p className="mt-2 text-sm text-slate-600">Review incoming reports, find flagged budget balances, and track dispositions.</p>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">{items.length} matching reports</div>
+        <div className="no-print flex flex-wrap gap-2">
+          <button onClick={() => downloadExport('xlsx')} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700">Download Excel</button>
+          <button onClick={() => downloadExport('csv')} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700">Download CSV bundle</button>
+          {user?.role === 'COUNCIL_ADMIN' ? <Link to="/admin/initiatives" className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white">Initiatives & forms</Link> : null}
+          {user?.role === 'COUNCIL_ADMIN' ? <Link to="/admin/rollover" className="rounded-lg border border-brand-300 bg-white px-3 py-2 text-sm font-semibold text-brand-700">Annual rollover</Link> : null}
+        </div>
       </header>
+
+      <section className="grid gap-4 md:grid-cols-4">
+        {[
+          ['Submitted reports', analytics?.submitted_count ?? 0],
+          ['Reported budget', `$${analytics?.reported_budget ?? '0.00'}`],
+          ['Allocated budget', `$${analytics?.allocated_budget ?? '0.00'}`],
+          ['Balanced reports', analytics?.balanced_count ?? 0],
+        ].map(([label, value]) => <div key={String(label)} className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs uppercase tracking-wide text-slate-500">{label}</div><div className="mt-1 text-xl font-bold text-slate-900">{value}</div></div>)}
+      </section>
+
+      <section className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-2xl border border-slate-200 bg-white p-5"><h2 className="font-semibold text-slate-900">Submission status</h2><div className="mt-4 space-y-3">
+          {Object.entries(analytics?.status_counts ?? {}).map(([label, value]) => { const maximum = Math.max(1, ...Object.values(analytics?.status_counts ?? {})); return <div key={label}><div className="mb-1 flex justify-between text-sm"><span>{label}</span><span>{value}</span></div><div className="h-2 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-brand-500" style={{ width: `${Math.max(3, (value / maximum) * 100)}%` }} /></div></div>; })}
+          {!Object.keys(analytics?.status_counts ?? {}).length ? <p className="text-sm text-slate-500">No submissions are recorded.</p> : null}
+        </div></div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-5"><h2 className="font-semibold text-slate-900">Reported budget by borough</h2><div className="mt-4 space-y-3">
+          {(analytics?.borough_totals ?? []).map((item) => { const values = analytics?.borough_totals ?? []; const maximum = values.reduce((current, entry) => toCents(entry.total) > toCents(current) ? entry.total : current, '0.00'); return <div key={item.borough}><div className="mb-1 flex justify-between text-sm"><span>{item.borough}</span><span>${item.total}</span></div><div className="h-2 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-emerald-600" style={{ width: `${Math.max(3, barWidth(item.total, maximum))}%` }} /></div></div>; })}
+          {!analytics?.borough_totals.length ? <p className="text-sm text-slate-500">No borough totals are available.</p> : null}
+        </div></div>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5">
+        <h2 className="font-semibold text-slate-900">Open reporting obligations</h2>
+        <p className="mt-1 text-sm text-slate-600">Eligible organization and cycle assignments without a started report.</p>
+        <div className="mt-3 overflow-x-auto"><table className="w-full min-w-[700px] text-left text-sm"><thead><tr className="border-b text-xs uppercase text-slate-500"><th className="py-2">Initiative</th><th>Organization</th><th>Cycle</th><th>Due</th><th>Awarded</th></tr></thead><tbody>
+          {obligations.map((item) => <tr key={`${item.initiative_id}-${item.organization_id}-${item.cycle_id}`} className="border-b border-slate-100"><td className="py-2">{item.initiative_name}</td><td>{item.organization_name}</td><td>{item.cycle_name}</td><td>{item.due_date}</td><td>${item.awarded_amount}</td></tr>)}
+        </tbody></table>{!obligations.length ? <p className="py-4 text-sm text-slate-500">No open unstarted obligations.</p> : null}</div>
+      </section>
 
       <section className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-[1fr_220px_auto]">
         <label className="text-sm font-medium text-slate-700">Search
@@ -41,8 +103,8 @@ export function ReviewPage() {
         </label>
         <label className="text-sm font-medium text-slate-700">Status
           <select value={status} onChange={(event) => setStatus(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal">
-            <option value="">All submitted reports</option>
-            {['SUBMITTED', 'IN_REVIEW', 'REVISION_REQUESTED', 'APPROVED', 'REJECTED'].map((value) => <option key={value}>{value}</option>)}
+            <option value="">All reports</option>
+            {['DRAFT', 'SUBMITTED', 'IN_REVIEW', 'REVISION_REQUESTED', 'APPROVED', 'REJECTED'].map((value) => <option key={value}>{value}</option>)}
           </select>
         </label>
         <label className="flex items-center gap-2 self-end pb-2 text-sm text-slate-700">
@@ -58,12 +120,11 @@ export function ReviewPage() {
         </div>
         {items.length ? items.map((item) => (
           <Link key={item.submission_id} to={`/review/${encodeURIComponent(item.submission_id)}`} className="grid grid-cols-[1.1fr_1.2fr_1fr_150px_120px_110px] gap-3 border-b border-slate-100 px-5 py-4 text-sm text-slate-700 last:border-0 hover:bg-slate-50">
-            <span className="font-medium text-slate-900">{item.initiative_name}</span><span>{item.organization_name}</span><span>{item.cycle_name}</span><span>{item.status}</span><span>${item.total_budget}</span>
+            <span className="font-medium text-slate-900">{item.initiative_name}</span><span>{item.organization_name}</span><span>{item.cycle_name}</span><span>{item.status}{item.is_incomplete ? ' · Incomplete' : ''}</span><span>${item.total_budget}</span>
             <span className={item.is_balanced ? 'text-emerald-700' : 'font-semibold text-amber-700'}>{item.is_balanced ? 'Balanced' : 'Flagged'}</span>
           </Link>
-        )) : <p className="px-5 py-10 text-center text-sm text-slate-500">No submitted reports match these filters.</p>}
+        )) : <p className="px-5 py-10 text-center text-sm text-slate-500">No reports match these filters.</p>}
       </section>
-      <p className="text-xs text-slate-500">Form administration, fiscal-year rollover, exports, notifications, and user provisioning are separate modules and are not available in this local demo increment.</p>
     </div>
   );
 }

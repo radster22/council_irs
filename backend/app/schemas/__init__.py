@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 from typing import Any, Literal
 
@@ -39,8 +40,10 @@ class AdminUserResponse(BaseModel):
 class BudgetLineInput(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    category: str
-    amount: str | Decimal
+    category: str = ""
+    description: str | None = Field(default=None, max_length=500)
+    amount: str | Decimal = ""
+    actual_amount: str | Decimal | None = None
 
 
 class BudgetValidationRequest(BaseModel):
@@ -115,6 +118,7 @@ class SubmissionDetailResponse(CreateSubmissionResponse):
     total_budget: str = "0.00"
     is_balanced: bool = False
     audit_history: list[dict[str, Any]] = Field(default_factory=list)
+    versions: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ReviewQueueItemResponse(BaseModel):
@@ -126,6 +130,7 @@ class ReviewQueueItemResponse(BaseModel):
     total_budget: str
     is_balanced: bool
     updated_at: str | None = None
+    is_incomplete: bool = False
 
 
 class ReviewActionRequest(BaseModel):
@@ -147,10 +152,71 @@ class SaveSubmissionResponse(BaseModel):
     is_balanced: bool
     line_count: int
     is_valid: bool
+    validation_errors: list[str] = Field(default_factory=list)
     saved_by: str
 
 
 class AttachmentUploadResponse(AttachmentSummaryResponse):
     uploaded_by: str
+
+
+class AdminEditSubmissionRequest(BaseModel):
+    form_data: dict[str, Any] = Field(default_factory=dict)
+    budget_lines: list[BudgetLineInput] = Field(default_factory=list)
+    comment: str = Field(..., min_length=1, max_length=5000)
+
+
+class AdminUserUpdateRequest(BaseModel):
+    role: Literal["COUNCIL_ADMIN", "COUNCIL_REVIEWER", "EXTERNAL_SUBMITTER", "VIEW_ONLY"]
+    is_active: bool
+    organization_eins: list[str] | None = None
+
+
+class AdminPasswordResetRequest(BaseModel):
+    password: str = Field(..., min_length=12, max_length=72)
+
+
+class InitiativeCreateRequest(BaseModel):
+    code: str = Field(..., min_length=1, max_length=50)
+    name: str = Field(..., min_length=1, max_length=255)
+    fiscal_year: int = Field(..., ge=2000, le=2200)
+
+
+class InitiativeUpdateRequest(BaseModel):
+    status: Literal["ACTIVE", "COMBINED", "RETIRED"]
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+
+
+class CycleCreateRequest(BaseModel):
+    cycle_name: str = Field(..., min_length=1, max_length=100)
+    start_date: date
+    due_date: date
+    status: Literal["UPCOMING", "OPEN", "CLOSED"] = "UPCOMING"
+
+
+class CycleUpdateRequest(BaseModel):
+    status: Literal["UPCOMING", "OPEN", "CLOSED"]
+
+
+class AssignmentCreateRequest(BaseModel):
+    ein: str = Field(..., min_length=9, max_length=10)
+    awarded_amount: Decimal = Field(..., ge=0, max_digits=14, decimal_places=2)
+
+
+class FormTemplateCreateRequest(BaseModel):
+    schema_definition: dict[str, Any]
+    is_published: bool = False
+
+
+class RolloverRequest(BaseModel):
+    source_fiscal_year: int = Field(..., ge=2000, le=2200)
+    destination_fiscal_year: int = Field(..., ge=2001, le=2201)
+
+
+class RolloverResponse(BaseModel):
+    initiatives_created: int
+    cycles_created: int
+    templates_created: int
+    assignments_created: int
 
 

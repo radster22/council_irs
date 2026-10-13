@@ -147,11 +147,13 @@ def list_review_queue(
             Submission.total_budget,
             Submission.is_balanced,
             Submission.updated_at,
+            Submission.form_data,
+            Submission.initiative_id,
+            Submission.template_version,
         )
         .join(Initiative, Initiative.id == Submission.initiative_id)
         .join(Organization, Organization.id == Submission.organization_id)
         .join(ReportingCycle, ReportingCycle.id == Submission.cycle_id)
-        .where(Submission.status != "DRAFT")
         .order_by(Submission.updated_at.desc(), Submission.created_at.desc())
     )
     if status_filter:
@@ -166,8 +168,29 @@ def list_review_queue(
         ))
     if balanced is not None:
         statement = statement.where(Submission.is_balanced.is_(balanced))
-    return [
-        {
+    result: list[dict[str, object]] = []
+    for row in db.execute(statement).all():
+        incomplete = False
+        try:
+            template = db.scalar(select(FormTemplate).where(
+                FormTemplate.initiative_id == row[9], FormTemplate.version == row[10]
+            ))
+            if template is None:
+                incomplete = True
+            else:
+                validate_form_data(template.schema_definition, row[8] or {})
+                line_rows = db.scalars(select(BudgetLineItem).where(
+                    BudgetLineItem.submission_id == row[0]
+                )).all()
+                budget_check = validate_budget_lines([
+                    {"category": line.category, "amount": str(line.budgeted_amount),
+                     "actual_amount": str(line.actual_amount) if line.actual_amount is not None else None}
+                    for line in line_rows
+                ], require_positive=True, require_category=True)
+                incomplete = not bool(budget_check["is_valid"]) or not bool(row[6])
+        except SubmissionError:
+            incomplete = True
+        result.append({
             "submission_id": row[0],
             "initiative_name": row[1],
             "organization_name": row[2],
@@ -176,9 +199,9 @@ def list_review_queue(
             "total_budget": str(row[5]),
             "is_balanced": bool(row[6]),
             "updated_at": row[7].isoformat() if row[7] else None,
-        }
-        for row in db.execute(statement).all()
-    ]
+            "is_incomplete": incomplete,
+        })
+    return result
 
 
 def apply_review_action(
@@ -327,17 +350,25 @@ def persist_submission(
     form_data: dict[str, object],
     budget_lines: list[dict[str, object]],
 ) -> dict[str, object]:
+    form_data = dict(form_data)
+    form_data.pop("_draft_budget_lines", None)
+    budget_lines = [
+        {
+            "category": str(line.get("category") or ""),
+            "description": str(line.get("description") or "") or None,
+            "amount": "" if line.get("amount") is None else str(line.get("amount")),
+            "actual_amount": None if line.get("actual_amount") in (None, "") else str(line.get("actual_amount")),
+        }
+        for line in budget_lines
+    ]
     is_submitting = status == "SUBMITTED"
-    summary = validate_budget_lines(
-        budget_lines,
-        require_positive=is_submitting,
-        require_category=is_submitting,
-    )
-    if not summary["is_valid"]:
-        raise SubmissionError(
-            "; ".join(str(error) for error in summary["errors"]),
-            400,
-        )
+    if is_submitting:
+        summary = validate_budget_lines(budget_lines, require_positive=True, require_category=True)
+        if not summary["is_valid"]:
+            raise SubmissionError("; ".join(str(error) for error in summary["errors"]), 400)
+    else:
+        summary = _validate_draft_budget_lines(budget_lines)
+    budget_is_valid = bool(summary["is_valid"])
 
     template = db.scalar(
         select(FormTemplate).where(
@@ -357,28 +388,58 @@ def persist_submission(
                 f"Budget total must equal the configured amount ({expected_total:.2f}).",
                 400,
             )
+    elif template is not None:
+        try:
+            validate_form_data(template.schema_definition, form_data)
+        except SubmissionError as exc:
+            summary["errors"].append(exc.detail)
 
     db.execute(delete(BudgetLineItem).where(BudgetLineItem.submission_id == submission.id))
     snapshot_lines: list[dict[str, object]] = []
     for index, line in enumerate(budget_lines, start=1):
         category = str(line.get("category", "")).strip()
-        amount = Decimal(str(line.get("amount", "0")))
-        snapshot_lines.append({"line_number": index, "category": category, "amount": str(amount)})
+        amount = _optional_draft_decimal(line.get("amount")) or Decimal("0.00")
+        description = str(line.get("description") or "").strip() or None
+        actual_amount = _optional_draft_decimal(line.get("actual_amount"))
+        snapshot_lines.append({"line_number": index, "category": category, "description": description,
+                               "amount": str(amount), "actual_amount": str(actual_amount) if actual_amount is not None else None})
         db.add(
             BudgetLineItem(
                 id=str(uuid4()),
                 submission_id=submission.id,
                 line_number=index,
                 category=category,
+                description=description,
                 budgeted_amount=amount,
+                actual_amount=actual_amount,
             )
         )
 
     was_revision = submission.status == "REVISION_REQUESTED"
-    submission.form_data = form_data
+    stored_form_data = dict(form_data)
+    if is_submitting:
+        stored_form_data.pop("_draft_budget_lines", None)
+    else:
+        stored_form_data["_draft_budget_lines"] = budget_lines
+    submission.form_data = stored_form_data
     submission.total_budget = Decimal(str(summary["total"]))
-    expected_total = _get_configured_budget_total(template.schema_definition, submission, form_data) if template else None
-    submission.is_balanced = expected_total is None or submission.total_budget == expected_total
+    has_reconciliation = bool(template and template.schema_definition.get("budget_reconciliation") is not None)
+    try:
+        expected_total = _get_configured_budget_total(template.schema_definition, submission, form_data) if template else None
+    except SubmissionError as exc:
+        if is_submitting:
+            raise
+        summary["errors"].append(exc.detail)
+        summary["is_valid"] = False
+        budget_is_valid = False
+        expected_total = None
+    if not is_submitting and has_reconciliation and expected_total is not None and Decimal(str(summary["total"])) != expected_total:
+        summary["errors"].append(f"Budget total must equal the configured amount ({expected_total:.2f}).")
+        summary["is_valid"] = False
+        budget_is_valid = False
+    submission.is_balanced = budget_is_valid and (
+        (not has_reconciliation) or (expected_total is not None and submission.total_budget == expected_total)
+    )
     submission.status = "SUBMITTED" if is_submitting else ("REVISION_REQUESTED" if was_revision else "DRAFT")
 
     if is_submitting:
@@ -417,6 +478,119 @@ def persist_submission(
         raise
 
     return summary
+
+
+def _optional_draft_decimal(value: object) -> Decimal | None:
+    if value in (None, ""):
+        return None
+    try:
+        parsed = Decimal(str(value))
+        if parsed.is_finite() and parsed >= 0 and parsed <= Decimal("999999999999.99") and parsed.quantize(Decimal("0.01")) == parsed:
+            return parsed
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    return None
+
+
+def _validate_draft_budget_lines(lines: list[dict[str, object]]) -> dict[str, object]:
+    if len(lines) > 100:
+        raise SubmissionError("Budget can contain at most 100 line items.", 400)
+    errors: list[str] = []
+    if not lines:
+        errors.append("At least one budget line is required.")
+    total = Decimal("0.00")
+    actual_total = Decimal("0.00")
+    for index, line in enumerate(lines, start=1):
+        category = str(line.get("category") or "").strip()
+        if not category:
+            errors.append(f"Line {index}: category is incomplete.")
+        if len(category) > 100:
+            errors.append(f"Line {index}: category must be at most 100 characters.")
+        description = str(line.get("description") or "")
+        if len(description) > 500:
+            errors.append(f"Line {index}: description must be at most 500 characters.")
+        raw_amount = line.get("amount")
+        if raw_amount in (None, ""):
+            errors.append(f"Line {index}: budgeted amount is incomplete.")
+        else:
+            amount = _optional_draft_decimal(raw_amount)
+            if amount is None:
+                errors.append(f"Line {index}: budgeted amount must be non-negative and have at most two decimals.")
+            else:
+                total += amount
+                if total > Decimal("999999999999.99"):
+                    errors.append("Budget total exceeds the supported maximum.")
+                    total = Decimal("999999999999.99")
+        raw_actual = line.get("actual_amount")
+        if raw_actual not in (None, ""):
+            actual = _optional_draft_decimal(raw_actual)
+            if actual is None:
+                errors.append(f"Line {index}: actual amount must be non-negative and have at most two decimals.")
+            else:
+                actual_total += actual
+                if actual_total > Decimal("999999999999.99"):
+                    errors.append("Actual budget total exceeds the supported maximum.")
+                    actual_total = Decimal("999999999999.99")
+    return {"line_count": len(lines), "total": str(total.quantize(Decimal("0.01"))),
+            "actual_total": str(actual_total.quantize(Decimal("0.01"))), "is_valid": not errors, "errors": errors}
+
+
+def edit_submitted_submission(
+    db: Session, submission: Submission, user: User, form_data: dict[str, object],
+    budget_lines: list[dict[str, object]], comment: str,
+) -> None:
+    form_data = dict(form_data)
+    form_data.pop("_draft_budget_lines", None)
+    if user.role != "COUNCIL_ADMIN":
+        raise SubmissionError("Only a Council administrator can edit a submitted report.", 403)
+    if submission.status == "DRAFT":
+        raise SubmissionError("Council edits are available after a report is submitted.", 409)
+    summary = validate_budget_lines(budget_lines, require_positive=True, require_category=True)
+    if not summary["is_valid"]:
+        raise SubmissionError("; ".join(str(error) for error in summary["errors"]), 400)
+    template = db.scalar(select(FormTemplate).where(
+        FormTemplate.initiative_id == submission.initiative_id,
+        FormTemplate.version == submission.template_version,
+    ))
+    if template is None:
+        raise SubmissionError("The report form version is unavailable.", 409)
+    validate_form_data(template.schema_definition, form_data)
+    total = Decimal(str(summary["total"]))
+    expected = _get_configured_budget_total(template.schema_definition, submission, form_data)
+    if expected is not None and total != expected:
+        raise SubmissionError(f"Budget total must equal the configured amount ({expected:.2f}).", 400)
+    version_number = (db.scalar(select(func.max(SubmissionVersion.version_number)).where(
+        SubmissionVersion.submission_id == submission.id
+    )) or 0) + 1
+    snapshot: list[dict[str, object]] = []
+    db.execute(delete(BudgetLineItem).where(BudgetLineItem.submission_id == submission.id))
+    for index, line in enumerate(budget_lines, start=1):
+        amount = Decimal(str(line["amount"]))
+        actual = _optional_draft_decimal(line.get("actual_amount"))
+        category = str(line.get("category", "")).strip()
+        description = str(line.get("description") or "").strip() or None
+        snapshot.append({"line_number": index, "category": category, "description": description,
+                         "amount": str(amount), "actual_amount": str(actual) if actual is not None else None})
+        db.add(BudgetLineItem(id=str(uuid4()), submission_id=submission.id, line_number=index,
+            category=category, description=description, budgeted_amount=amount, actual_amount=actual))
+    submission.form_data = form_data
+    submission.total_budget = total
+    submission.is_balanced = expected is None or total == expected
+    db.add(SubmissionVersion(id=str(uuid4()), submission_id=submission.id,
+        version_number=version_number, template_version=submission.template_version,
+        form_snapshot=form_data, budget_snapshot={"lines": snapshot, "total": str(total)},
+        submitted_by=user.id, reviewer_notes=comment.strip()))
+    values: dict[str, object] = {"submission_id": submission.id, "action": "ADMIN_EDIT",
+        "actor_id": user.id, "actor_role": user.role,
+        "state_diff": {"version": version_number, "comment": comment.strip()}}
+    if db.bind is not None and db.bind.dialect.name == "sqlite":
+        values["id"] = (db.scalar(select(func.max(AuditLog.id))) or 0) + 1
+    db.add(AuditLog(**values))
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
 
 def validate_form_data(schema: dict[str, object], form_data: dict[str, object]) -> None:

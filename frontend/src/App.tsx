@@ -8,6 +8,8 @@ import { useAuth } from './hooks/useAuth';
 import { ReviewDetailPage } from './routes/ReviewDetailPage';
 import { UserPage } from './routes/UserPage';
 import { AccessDeniedPage } from './routes/AccessDeniedPage';
+import { InitiativeAdminPage } from './routes/InitiativeAdminPage';
+import { RolloverPage } from './routes/RolloverPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, loading } = useAuth();
@@ -54,7 +56,10 @@ export default function App() {
         }
       />
       <Route path="/review/:submissionId" element={<RoleRoute roles={['COUNCIL_ADMIN', 'COUNCIL_REVIEWER', 'VIEW_ONLY']} portal="council"><ReviewDetailPage /></RoleRoute>} />
+      <Route path="/review/:submissionId/edit" element={<RoleRoute roles={['COUNCIL_ADMIN']} portal="council"><ReportEditorPage /></RoleRoute>} />
       <Route path="/user_page" element={<RoleRoute roles={['COUNCIL_ADMIN']} portal="council"><UserPage /></RoleRoute>} />
+      <Route path="/admin/initiatives" element={<RoleRoute roles={['COUNCIL_ADMIN']} portal="council"><InitiativeAdminPage /></RoleRoute>} />
+      <Route path="/admin/rollover" element={<RoleRoute roles={['COUNCIL_ADMIN']} portal="council"><RolloverPage /></RoleRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

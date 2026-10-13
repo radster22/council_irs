@@ -10,6 +10,8 @@ export function Layout({ children, portal }: { children: React.ReactNode; portal
     : [
       { to: '/review', label: 'Submission Oversight' },
       ...(user?.role === 'COUNCIL_ADMIN' ? [{ to: '/user_page', label: 'User Administration' }] : []),
+      ...(user?.role === 'COUNCIL_ADMIN' ? [{ to: '/admin/initiatives', label: 'Initiatives & Forms' }] : []),
+      ...(user?.role === 'COUNCIL_ADMIN' ? [{ to: '/admin/rollover', label: 'Annual Rollover' }] : []),
     ];
 
   return (

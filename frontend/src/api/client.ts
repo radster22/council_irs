@@ -11,6 +11,9 @@ import type {
   SubmissionDetail,
   SubmissionListItem,
   ReviewQueueItem,
+  InitiativeAdminItem,
+  AdminAnalytics,
+  OpenObligation,
 } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
@@ -69,6 +72,11 @@ export const api = {
     }),
   me: async (token: string) => apiRequest<AuthUser>('/api/auth/me', { method: 'GET' }, token),
   listUsers: async (token: string) => apiRequest<AdminUser[]>('/api/admin/users', { method: 'GET' }, token),
+  listOrganizations: async (token: string) => apiRequest<{ id: string; ein: string; legal_name: string }[]>('/api/admin/organizations', { method: 'GET' }, token),
+  updateUser: async (userId: string, payload: { role: string; is_active: boolean; organization_eins?: string[] }, token: string) =>
+    apiRequest<AdminUser>(`/api/admin/users/${encodeURIComponent(userId)}`, { method: 'PATCH', body: JSON.stringify(payload) }, token),
+  resetUserPassword: async (userId: string, password: string, token: string) =>
+    apiRequest<void>(`/api/admin/users/${encodeURIComponent(userId)}/reset-password`, { method: 'POST', body: JSON.stringify({ password }) }, token),
   listSubmissions: async (token: string) =>
     apiRequest<SubmissionListItem[]>('/api/submissions', { method: 'GET' }, token),
   reviewQueue: async (token: string, filters: { status?: string; query?: string; balanced?: boolean } = {}) => {
@@ -84,6 +92,28 @@ export const api = {
       { method: 'POST', body: JSON.stringify({ action, comment: comment || null }) },
       token,
     ),
+  adminEditSubmission: async (submissionId: string, payload: { form_data: Record<string, unknown>; budget_lines: BudgetLine[]; comment: string }, token: string) =>
+    apiRequest<{ submission_id: string; status: string; action: string }>(`/api/submissions/${encodeURIComponent(submissionId)}/admin-edit`,
+      { method: 'POST', body: JSON.stringify(payload) }, token),
+  listInitiatives: async (token: string) => apiRequest<InitiativeAdminItem[]>('/api/admin/initiatives', { method: 'GET' }, token),
+  createInitiative: async (payload: { code: string; name: string; fiscal_year: number }, token: string) =>
+    apiRequest<Record<string, unknown>>('/api/admin/initiatives', { method: 'POST', body: JSON.stringify(payload) }, token),
+  updateInitiative: async (initiativeId: string, payload: { status: string; name?: string }, token: string) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/initiatives/${encodeURIComponent(initiativeId)}`, { method: 'PATCH', body: JSON.stringify(payload) }, token),
+  createCycle: async (initiativeId: string, payload: { cycle_name: string; start_date: string; due_date: string; status: string }, token: string) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/initiatives/${encodeURIComponent(initiativeId)}/cycles`, { method: 'POST', body: JSON.stringify(payload) }, token),
+  updateCycle: async (cycleId: string, status: string, token: string) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/cycles/${encodeURIComponent(cycleId)}`, { method: 'PATCH', body: JSON.stringify({ status }) }, token),
+  createAssignment: async (initiativeId: string, payload: { ein: string; awarded_amount: string }, token: string) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/initiatives/${encodeURIComponent(initiativeId)}/assignments`, { method: 'POST', body: JSON.stringify(payload) }, token),
+  createTemplate: async (initiativeId: string, payload: { schema_definition: Record<string, unknown>; is_published: boolean }, token: string) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/initiatives/${encodeURIComponent(initiativeId)}/templates`, { method: 'POST', body: JSON.stringify(payload) }, token),
+  getAnalytics: async (token: string) => apiRequest<AdminAnalytics>('/api/admin/analytics', { method: 'GET' }, token),
+  getOpenObligations: async (token: string) => apiRequest<OpenObligation[]>('/api/admin/obligations', { method: 'GET' }, token),
+  rollover: async (source_fiscal_year: number, destination_fiscal_year: number, token: string) =>
+    apiRequest<{ initiatives_created: number; cycles_created: number; templates_created: number; assignments_created: number }>(
+      '/api/admin/rollover', { method: 'POST', body: JSON.stringify({ source_fiscal_year, destination_fiscal_year }) }, token),
+  downloadExport: async (kind: 'csv' | 'xlsx', token: string) => apiRequest<Blob>(`/api/admin/exports/${kind}`, { method: 'GET' }, token, 'blob'),
   downloadAttachment: async (submissionId: string, attachmentId: string, token: string) =>
     apiRequest<Blob>(
       `/api/submissions/${encodeURIComponent(submissionId)}/attachments/${encodeURIComponent(attachmentId)}`,

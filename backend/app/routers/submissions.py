@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user
 from app.db import get_db
-from app.models import Attachment, AuditLog, BudgetLineItem, FormTemplate, Initiative, Organization, ReportingCycle, User
+from app.models import Attachment, AuditLog, BudgetLineItem, FormTemplate, Initiative, Organization, ReportingCycle, SubmissionVersion, User
 from app.schemas import (
     AttachmentSummaryResponse,
     AttachmentUploadResponse,
@@ -25,11 +25,13 @@ from app.schemas import (
     ReviewActionRequest,
     ReviewActionResponse,
     ReviewQueueItemResponse,
+    AdminEditSubmissionRequest,
 )
 from app.services.submission_service import (
     SubmissionError,
     create_draft_submission,
     apply_review_action,
+    edit_submitted_submission,
     get_form_fields,
     get_submission_for_user,
     list_review_queue,
@@ -71,7 +73,7 @@ def review_queue(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[ReviewQueueItemResponse]:
-    statuses = {"SUBMITTED", "IN_REVIEW", "REVISION_REQUESTED", "APPROVED", "REJECTED"}
+    statuses = {"DRAFT", "SUBMITTED", "IN_REVIEW", "REVISION_REQUESTED", "APPROVED", "REJECTED"}
     if status_filter and status_filter not in statuses:
         raise HTTPException(status_code=400, detail="Unsupported review status filter.")
     try:
@@ -136,6 +138,12 @@ def get_submission(
             FormTemplate.version == submission.template_version,
         )
     )
+    form_data = dict(submission.form_data or {})
+    saved_draft_lines = form_data.pop("_draft_budget_lines", None)
+    budget_lines = saved_draft_lines if submission.status == "DRAFT" and isinstance(saved_draft_lines, list) else [
+        {"category": item.category, "description": item.description, "amount": str(item.budgeted_amount),
+         "actual_amount": str(item.actual_amount) if item.actual_amount is not None else None} for item in items
+    ]
     return SubmissionDetailResponse(
         submission_id=submission.id,
         initiative_id=submission.initiative_id,
@@ -143,8 +151,8 @@ def get_submission(
         cycle_id=submission.cycle_id,
         template_version=submission.template_version,
         status=submission.status,
-        form_data=submission.form_data,
-        budget_lines=[{"category": item.category, "amount": str(item.budgeted_amount)} for item in items],
+        form_data=form_data,
+        budget_lines=budget_lines,
         form_schema={
             **template.schema_definition,
             "fields": get_form_fields(template.schema_definition),
@@ -179,6 +187,16 @@ def get_submission(
                 .order_by(AuditLog.created_at, AuditLog.id)
             ).all()
         ],
+        versions=[
+            {"version_number": version.version_number, "template_version": version.template_version,
+             "submitted_at": version.submitted_at.isoformat() if version.submitted_at else None,
+             "reviewer_notes": version.reviewer_notes,
+             "form_snapshot": version.form_snapshot,
+             "budget_snapshot": version.budget_snapshot}
+            for version in db.scalars(select(SubmissionVersion)
+                .where(SubmissionVersion.submission_id == submission.id)
+                .order_by(SubmissionVersion.version_number.desc())).all()
+        ],
     )
 
 
@@ -197,6 +215,24 @@ def review_submission(
     except SubmissionError as exc:
         _raise_submission_error(exc)
     return ReviewActionResponse(submission_id=submission.id, status=next_status, action=payload.action)
+
+
+@router.post("/{submission_id}/admin-edit", response_model=ReviewActionResponse)
+def admin_edit_submission(
+    submission_id: str,
+    payload: AdminEditSubmissionRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ReviewActionResponse:
+    try:
+        submission = get_submission_for_user(db, user, sanitize_submission_id(submission_id))
+        edit_submitted_submission(db, submission, user, payload.form_data,
+                                  [line.model_dump() for line in payload.budget_lines], payload.comment)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except SubmissionError as exc:
+        _raise_submission_error(exc)
+    return ReviewActionResponse(submission_id=submission.id, status=submission.status, action="ADMIN_EDIT")
 
 
 @router.get("/{submission_id}/attachments/{attachment_id}")
@@ -257,7 +293,8 @@ def save_submission(
         _raise_submission_error(exc)
 
     if payload.status == "SUBMITTED":
-        logger.info("submission confirmation queued for submission_id=%s", submission.id)
+        logger.info("submission confirmation prepared submission_id=%s actor_id=%s total_budget=%s line_count=%s",
+                    submission.id, user.id, summary["total"], summary["line_count"])
 
     return SaveSubmissionResponse(
         submission_id=submission.id,
@@ -266,7 +303,8 @@ def save_submission(
         total_budget=summary["total"],
         is_balanced=submission.is_balanced,
         line_count=summary["line_count"],
-        is_valid=True,
+        is_valid=bool(summary["is_valid"]),
+        validation_errors=list(summary.get("errors", [])),
         saved_by=user.email,
     )
 

@@ -33,3 +33,12 @@ button,
 input {
   font: inherit;
 }
+
+@media print {
+  body { background: white !important; }
+  aside, nav, .no-print, button { display: none !important; }
+  main { margin: 0 !important; padding: 0 !important; }
+  #root { min-height: 0; }
+  section, header { break-inside: avoid; box-shadow: none !important; }
+  input, textarea, select { border: 0 !important; padding-left: 0 !important; }
+}

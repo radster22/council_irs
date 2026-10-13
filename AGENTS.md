@@ -1,71 +1,56 @@
-# NYC Council Initiative Reporting System
+# Agent Instructions
 
-## Goal
+Build and maintain a local demonstration of the NYC Council Initiative Reporting System for RFP PIN #102202709162026.
 
-Build a local demonstration application for NYC Council Initiative Reporting System RFP PIN #102202709162026.
+## Canonical project guidance
 
-## Architecture
+`.claude/rules/` contains focused technical guidance. [02-business-rules.md](.claude/rules/02-business-rules.md) is the single source of truth for application requirements. Read applicable guidance and the matching `.claude/skills/*/SKILL.md` before editing. Do not create duplicate requirement catalogs.
 
-* Frontend: Vite, React 18, TypeScript, React Router, Tailwind CSS.
-* Backend: Python 3.11+, FastAPI, SQLAlchemy 2.0, Pydantic v2.
-* Database: Existing MySQL 8+ schema `council_irs_db`.
-* File storage: Local filesystem under `.uploads/`, with metadata in MySQL.
-* Notifications: Console logging.
-* Background work: Lightweight in-process tasks only.
+- [Architecture and local/production boundary](.claude/rules/01-architecture.md)
+- [Application business rules](.claude/rules/02-business-rules.md)
+- [Security requirements](.claude/rules/03-security.md)
+- [Database contract](.claude/rules/04-database-contract.md)
+- [Verification and change discipline](.claude/rules/05-verification.md)
+- [Production-only work register](ProductionUpdate.md)
 
-## Non-Negotiable Rules
+Treat all product requirements, obligation strengths, and acceptance details in `.claude/rules/02-business-rules.md` as complete and standalone. `ProductionUpdate.md` covers only production technology changes.
 
-1. Treat the live MySQL schema as authoritative. `database/schema.sql` is the checked-in DDL supplied for this project; compare it with live metadata when available. Do not fabricate or modify the database contract or triggers unless explicitly requested.
-2. Preserve composite foreign-key integrity, historical submission versions, and audit-log immutability.
-3. Enforce authentication, role authorization, and organization-level access on the backend.
-4. Use `Decimal`-based arithmetic for monetary calculations; never use floating-point arithmetic for budgets.
-5. Enforce a maximum of 100 budget line items and validate budget reconciliation before submission.
-6. Never trust client-supplied totals, user roles, organization IDs, or submission permissions.
-7. Validate uploads, enforce the 25 MiB limit, and prevent path traversal.
-8. Never commit real or production credentials, local uploads, database dumps, or generated secrets. The explicitly approved synthetic demo accounts and their hashes may be included in `database/seed_demo.sql`; keep their demo-only passwords documented as local-only.
+## Stack and boundaries
 
-## Project Guidance
+- Frontend: Vite, React 18, TypeScript, React Router, Tailwind CSS, TanStack Query.
+- Backend: Python 3.11+, FastAPI, SQLAlchemy 2, Pydantic v2.
+- Database: MySQL 8+, schema `council_irs_db`; the connected live schema is authoritative.
+- Local file storage: repository-root `.uploads/`; notifications are logged; background work is in-process.
+- Do not add production infrastructure or change the existing database contract unless explicitly requested.
 
-* Read `context/rfp-functional-specs.md` for functional requirements.
-* Read `context/db-schema-reference.md` for tables, constraints, and triggers.
-* Read `.claude/rules/04-business-rules.md` for confirmed RFP business rules and the requirement-source hierarchy.
-* Follow applicable files in `.claude/rules/`.
-* Use `.claude/skills/` for reusable project checks.
-* Record deferred production infrastructure and migration requirements in `ProductionUpdate.md`.
+## Working method
 
-## Requirement Sources
+1. Inspect the affected UI, API, service, ORM, tests, and applicable rules before changing behavior.
+2. Keep HTTP concerns in routers, business rules in services, persistence in models/DB access, and shared client behavior in existing frontend utilities.
+3. Make a small cohesive change and reuse existing dependencies and helpers. Do not add libraries for functionality already available in the project.
+4. For behavior changes, update focused tests. Run relevant checks and report exactly what passed, failed, or could not start.
+5. Never describe an unrun or blocked check as passing. Do not use a live database for destructive work.
+6. Before a Claude Code `git commit`, `.claude/settings.json` runs the configured repository checks. The hook blocks the commit if a check fails.
+7. Update `.claude/rules/02-business-rules.md` when a product requirement is clarified or changed. Keep production technology transition details in `ProductionUpdate.md`.
 
-The RFP is the source for contractual requirements. `business_rules/NYC_Council_Initiative_Reporting_User_Stories_and_Business_Rules.xlsx` is a traceability aid; validate its rule summaries against the cited RFP text when a conflict matters. The high-level architecture document is a proposed design, not an independent contractual requirement. Keep local-demo constraints and production-only obligations distinct, and record deferred production requirements in `ProductionUpdate.md`.
+## Local commands
 
-## Local Commands
+```powershell
+# From repository root
+python -m compileall -q backend/app
+python -m pytest backend/tests -q
 
-* Backend: from the repository root, `cd backend && uvicorn app.main:app --reload --port 8000`
-* Frontend: from the repository root, `cd frontend && npm run dev`
-* Backend checks: `python -m compileall -q backend/app && python -m pytest backend/tests -q`
-* Frontend checks: `cd frontend && npm run lint && npm test && npm run build`
+# Backend
+cd backend
+python -m uvicorn app.main:app --reload --port 8000
 
-## Implementation Discipline
+# Frontend
+cd frontend
+npm install
+npm run dev
+npm run lint
+npm test -- --run
+npm run build
+```
 
-Implement in small, testable increments. Run relevant tests after changes. Do not introduce production infrastructure or expand scope without explicit approval.
-
-Before editing any file, read the applicable `.claude/rules/*.md` and matching `.claude/skills/*.md`, and run the relevant repo checks from the project hook workflow. Follow those instructions every time; do not skip them for convenience.
-
-## Phase Tracker
-
-Use the following phases to track progress. Once a phase is complete, update the line to strikethrough format and add a brief note, for example: `~~Phase 1 — Local infrastructure — completed: MySQL, FastAPI, MinIO, and Mailpit verified locally~~`.
-
-- ~~Phase 1 — Local infrastructure — MySQL · SQLAlchemy · FastAPI — completed: local MySQL connection, `SELECT 1`, and read-only schema inspection verified; MinIO and Mailpit are out of local-demo scope.~~
-- ~~Phase 2 — Backend foundations — SQLAlchemy · Pydantic · JWT · RBAC — completed: ORM columns, constraints, and indexes match live metadata; database-backed login, role guards, and organization membership checks are implemented and tested.~~
-- [ ] Phase 3 — Reporting workflow — Initiatives · Cycles · Dynamic forms · Budget grid — support draft/save/submit flows with file attachments and review state.
-- [ ] Phase 4 — Frontend — React · TypeScript · React Router · TanStack Query — build login, dashboards, report editor, history, and council review screens.
-- [ ] Phase 5 — Supporting features — MinIO · Excel/CSV/PDF · Email · Background jobs — add exports, notifications, reminders, and scheduled work.
-
-### Verification Notes
-
-The complete live contract is recorded in `context/db-schema-reference.md`; metadata was queried read-only and no database changes were made. Authentication and access-control tests use an isolated SQLite fixture. A successful login using a real MySQL application user remains unverified; do not use production or personal credentials for tests.
-
-### Completion Rule
-
-When a task is finished, do not leave it as an unchecked item. Replace it using strikethrough formatting so the completed work is clearly visible to future agents, for example:
-
-- ~~Phase 3 — Reporting workflow — completed: draft/save/submit flow and budget validation are in place.~~
+Copy the root `.env.example` to `.env` for local configuration. Never read, print, or commit `.env` values, real credentials, generated secrets, uploads, or database dumps.

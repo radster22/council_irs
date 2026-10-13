@@ -7,7 +7,8 @@ from uuid import uuid4
 from fastapi import UploadFile
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
-UPLOAD_ROOT = Path(__file__).resolve().parents[2] / ".uploads"
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+UPLOAD_ROOT = PROJECT_ROOT / ".uploads"
 
 
 def sanitize_submission_id(submission_id: str) -> str:

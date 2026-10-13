@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import io
 from datetime import date
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -29,6 +30,11 @@ from app.models import (
     UserOrganization,
 )
 from app.services.upload_service import save_uploaded_file
+
+
+def test_upload_storage_root_is_repository_dot_uploads() -> None:
+    repository_root = Path(__file__).resolve().parents[2]
+    assert upload_service.UPLOAD_ROOT == repository_root / ".uploads"
 
 
 @pytest.fixture

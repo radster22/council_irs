@@ -7,7 +7,7 @@ Local demonstration for NYC Council Initiative Reporting System RFP PIN #1022027
 - **External submitter:** organization-scoped assignments, draft reports, dynamic questions, budget lines, supporting uploads, and submission history.
 - **Council Finance:** searchable review queue, report detail, review dispositions, audit history, and admin-only user listing.
 
-Form administration, annual rollover, spreadsheet/PDF exports, email delivery, and production operations are not implemented in this local demo. See [ProductionUpdate.md](ProductionUpdate.md) for deferred production work and [business_rules/COMPLIANCE_DIAGNOSTIC.md](business_rules/COMPLIANCE_DIAGNOSTIC.md) for the current rule assessment.
+See [application requirements](.claude/rules/02-business-rules.md) for the portal workflows and reporting capabilities. See [ProductionUpdate.md](ProductionUpdate.md) for technology changes needed to move the local stack to production.
 
 ## Requirements
 
@@ -50,7 +50,7 @@ All accounts are synthetic and use demo-only passwords. Change or remove them be
 | Bronx submitter | `submitter.bronx@cbo.org` | `test123` |
 | Brooklyn submitter | `submitter.brooklyn@cbo.org` | `test123` |
 
-The synthetic records cover two unbalanced cases (a draft and a flagged submitted report), a balanced submitted report, a report in review, a revision-requested report, an approved report, and an open unstarted assignment. The flagged submitted case is intentionally seeded for reviewer triage; new submissions still go through server-side budget validation. Upload a real local file through the portal to demonstrate attachments; the seed does not create pretend file metadata.
+The synthetic records cover two unbalanced cases (a draft and a flagged submitted report), a balanced submitted report, a report in review, a revision-requested report, an approved report, and an open unstarted assignment. The flagged submitted case is intentionally seeded for reviewer triage; new submissions still go through server-side budget validation. Upload documents through the portal; they are stored under the repository-root `.uploads/` directory, which is ignored by Git and starts empty.
 
 ## Backend
 
@@ -84,8 +84,9 @@ npm test
 npm run build
 ```
 
+When using Claude Code 2.1.295 or later, `.claude/settings.json` registers pre-commit checks for Bash and PowerShell `git commit` commands. A failed check blocks the commit.
+
 ## Project references
 
-- [Functional requirements](context/rfp-functional-specs.md) and [schema reference](context/db-schema-reference.md)
+- [Application business rules](.claude/rules/02-business-rules.md), [architecture/scope](.claude/rules/01-architecture.md), and [database contract](.claude/rules/04-database-contract.md)
 - [Database schema](database/schema.sql) and [synthetic demo seed](database/seed_demo.sql)
-- Source RFP, proposed architecture, and business-rules workbook: `business_rules/`

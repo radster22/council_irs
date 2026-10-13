@@ -1,10 +1,15 @@
-# Architecture Rules
+# Architecture and Scope
 
-- Keep HTTP concerns in routers, persistence concerns in `db` and `models`, and business rules in `services`.
-- Put request and response contracts in `schemas` and reusable UI contracts in `frontend/src/types`.
-- Keep background and scheduled work in `backend/app/tasks`.
-- Add or update tests when changing an API contract or business rule.
-- Read and follow `.claude/settings.json`, `.claude/rules/*.md`, and the relevant `.claude/skills/*.md` before making any repo change.
-- Prefer the existing project structure and naming over creating parallel modules or duplicate implementations.
-- Treat the live MySQL database as the source of truth when it differs from repo-local fixtures or documentation.
-- Use read-only schema inspection before implementing ORM models or database logic; do not change the database schema without explicit approval.
+## Runtime architecture
+
+- Frontend: Vite, React 18, TypeScript, React Router, Tailwind CSS, and TanStack Query. Reuse `frontend/src/api/client.ts`, existing auth/query hooks, types, and shared components.
+- Backend: FastAPI, SQLAlchemy 2, and Pydantic v2. Keep HTTP concerns in routers, workflow rules in services, persistence in `models`/DB access, and request/response contracts in schemas.
+- Database: MySQL 8+ and the existing `council_irs_db` contract. Never create or migrate schema at application startup.
+- Files: local filesystem under repository-root `.uploads/`, with attachment metadata in MySQL. Uploaded files are added through the UI and remain local/ignored by Git.
+- Notifications: console logging. Background work: lightweight in-process tasks.
+
+## Local/production boundary
+
+The local demo uses MySQL, filesystem uploads, console notifications, and in-process tasks. It does not prove cloud authorization, FedRAMP/NIST compliance, production capacity/availability, perpetual retention operations, incident response, email delivery, vendor support, backup/recovery, or delivery schedule. The recorded hosting requirement includes conflicting internal-hosting and cloud/no-Council-server language; retain it as a production decision to resolve.
+
+Do not add cloud services, managed secrets, object storage, durable queues, production mail, or operational controls as part of a local feature by assumption.

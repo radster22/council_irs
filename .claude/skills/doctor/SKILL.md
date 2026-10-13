@@ -1,21 +1,20 @@
 ---
 name: doctor
-description: Check repository setup, configuration, and common development prerequisites.
+description: Diagnose local setup and verification blockers without exposing secrets or changing live data.
 ---
 
-# Repository Doctor
+# Local Demo Doctor
 
-Inspect the repository structure, required environment variables, dependency manifests, and available test commands. Report concrete blockers and safe next steps. Do not modify production data or secrets.
+Use when a clone cannot start, connect, or run checks. Read [architecture](../../rules/01-architecture.md), [database contract](../../rules/04-database-contract.md), and [verification rules](../../rules/05-verification.md) as relevant.
 
-## Required workflow
+## Procedure
 
-1. Read the relevant `.claude` instructions and repo docs before editing.
-2. Check the backend dependency manifests and env placeholders.
-3. Validate with the smallest relevant command, such as `python -m pytest backend/tests -q` or `python -m compileall -q backend/app`.
-4. Record blockers explicitly and avoid claiming a service is verified unless the command output shows it.
+1. Check repository files, dependency manifests, documented commands, and `.env.example` variable names/placeholders. Never open, echo, or print `.env` contents.
+2. Inspect the environment without exposing values. Distinguish missing tools/dependencies from invalid or unavailable services.
+3. Run the smallest check that demonstrates the issue. A command that fails to start is a blocker, not a passing check.
+4. For a database issue, confirm whether the target is a disposable local demo DB; use read-only checks for diagnosis. Do not reset, migrate, or seed a database unless explicitly requested and the target is confirmed local/disposable.
+5. Give concrete remediation steps based on repository docs. Avoid personal machine paths and secret-bearing command output.
 
-## Do not do
+## Report
 
-- Do not read or commit secrets from `.env` files.
-- Do not change live production database content.
-- Do not treat missing MySQL credentials as a successful database validation.
+List the check and result, what remains unverified, and the next safe step. Do not claim live MySQL compatibility from SQLite tests or checked-in DDL alone.

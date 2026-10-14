@@ -1,7 +1,7 @@
 -- NYC Council Initiative Reporting System (PIN #102202709162026)
 -- MySQL 8.0+ / InnoDB. Contract transcribed from the schema supplied for this project.
 -- Do not run against a database containing data: this file creates objects only.
-
+DROP DATABASE IF EXISTS council_irs_db;
 CREATE SCHEMA IF NOT EXISTS council_irs_db
     CHARACTER SET utf8mb4
     COLLATE utf8mb4_unicode_ci;

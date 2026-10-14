@@ -4,6 +4,8 @@ import { api } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import type { AttachmentSummary, AttachmentUpload, BudgetLine, BudgetValidationSummary } from '../types';
 
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+
 type FormField = {
   id: string;
   type?: string;
@@ -48,10 +50,12 @@ export function ReportEditorPage() {
   const [error, setError] = useState('');
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploadedFiles, setUploadedFiles] = useState<AttachmentSummary[]>([]);
+  const [uploadError, setUploadError] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
   const [isDirty, setIsDirty] = useState(false);
   const [adminEditComment, setAdminEditComment] = useState('');
   const [autosaveState, setAutosaveState] = useState('All changes saved');
+  const [revisionRequest, setRevisionRequest] = useState<{ comment: string; created_at: string | null } | null>(null);
   const editVersion = useRef(0);
 
   const markDirty = () => {
@@ -95,6 +99,12 @@ export function ReportEditorPage() {
         setSubmissionStatus(submission.status);
         setIsBalanced(submission.is_balanced);
         setUploadedFiles(submission.attachments);
+        // audit_history is oldest-first; the last revision request is the one the submitter must address.
+        const latestRequest = [...submission.audit_history].reverse().find((event) => event.action === 'REQUEST_REVISION');
+        const requestComment = latestRequest?.state_diff.comment;
+        setRevisionRequest(latestRequest && typeof requestComment === 'string' && requestComment
+          ? { comment: requestComment, created_at: latestRequest.created_at }
+          : null);
         setIsDirty(false);
         setAutosaveState('All changes saved');
         const fields = submission.form_schema.fields;
@@ -240,14 +250,41 @@ export function ReportEditorPage() {
     return () => window.clearTimeout(timeout);
   }, [canEdit, formData, isAdminEdit, isDirty, lines, loading, reportId, saving, token]);
 
+  // Mirror the backend 25 MiB cap so oversized files are rejected before any network transfer.
+  const oversizedFileMessage = (files: File[]) => {
+    const oversized = files.filter((file) => file.size > MAX_UPLOAD_BYTES);
+    if (!oversized.length) return '';
+    const names = oversized.map((file) => file.name).join(', ');
+    return `${names} ${oversized.length === 1 ? 'is' : 'are'} larger than 25 MB. Upload a file smaller than 25 MB.`;
+  };
+
+  const selectFiles = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    const message = oversizedFileMessage(files);
+    setUploadError(message);
+    setStatusMessage('');
+    if (message) {
+      event.target.value = '';
+      setSelectedFiles([]);
+      return;
+    }
+    setSelectedFiles(files);
+  };
+
   const uploadSelectedFile = async () => {
     if (!token || !reportId || !selectedFiles.length) {
-      setError('Choose a file before uploading.');
+      setUploadError('Choose a file before uploading.');
+      return;
+    }
+    const sizeMessage = oversizedFileMessage(selectedFiles);
+    if (sizeMessage) {
+      setUploadError(sizeMessage);
+      setStatusMessage('');
       return;
     }
 
     setSaving(true);
-    setError('');
+    setUploadError('');
     setStatusMessage('');
 
     try {
@@ -257,7 +294,7 @@ export function ReportEditorPage() {
       setStatusMessage(`${attachments.length} file${attachments.length === 1 ? '' : 's'} uploaded successfully.`);
       setSelectedFiles([]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed');
+      setUploadError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
       setSaving(false);
     }
@@ -275,6 +312,14 @@ export function ReportEditorPage() {
         <p className="mt-2 text-sm text-slate-600">{isAdminEdit ? 'Changes are saved as a new immutable version and recorded in the audit history.' : 'Complete each stage, save your draft, then submit after reviewing the server checks.'}</p>
         <p aria-live="polite" className="mt-2 text-xs font-medium text-slate-500">{autosaveState}</p>
       </header>
+
+      {submissionStatus === 'REVISION_REQUESTED' && revisionRequest ? (
+        <section role="status" className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <p className="text-sm font-semibold text-amber-900">Council Finance requested updates</p>
+          {revisionRequest.created_at ? <p className="text-xs text-amber-700">{revisionRequest.created_at}</p> : null}
+          <p className="mt-2 whitespace-pre-wrap text-sm text-amber-900">{revisionRequest.comment}</p>
+        </section>
+      ) : null}
 
       <nav aria-label="Report workflow" className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
         {[
@@ -357,7 +402,7 @@ export function ReportEditorPage() {
               <thead><tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500"><th className="px-2 py-2">Line</th><th className="px-2 py-2">Category</th><th className="px-2 py-2">Description</th><th className="px-2 py-2">Budgeted amount</th><th className="px-2 py-2">Actual amount</th><th className="px-2 py-2">Action</th></tr></thead>
               <tbody>
                 {lines.map((line, index) => (
-                  <tr key={`${index}-${line.category}`} className="border-b border-slate-100">
+                  <tr key={index} className="border-b border-slate-100">
                     <td className="px-2 py-2 font-medium text-slate-600">{index + 1}</td>
                     <td className="px-2 py-2"><input disabled={!canEdit} value={line.category} onChange={(event) => updateLine(index, 'category', event.target.value)} placeholder="Category" maxLength={100} className="w-full rounded-lg border border-slate-300 px-3 py-2" /></td>
                     <td className="px-2 py-2"><input disabled={!canEdit} value={line.description ?? ''} onChange={(event) => updateLine(index, 'description', event.target.value)} placeholder="Optional description" maxLength={500} className="w-full rounded-lg border border-slate-300 px-3 py-2" /></td>
@@ -385,7 +430,9 @@ export function ReportEditorPage() {
                 type="file"
                 multiple
                 accept=".pdf,.csv,.xlsx,.xls,.doc,.docx,.txt,.jpg,.jpeg,.png"
-                onChange={(event) => setSelectedFiles(Array.from(event.target.files ?? []))}
+                aria-label="Supporting documents"
+                aria-describedby={uploadError ? 'upload-error' : undefined}
+                onChange={selectFiles}
                 className="block w-full text-sm text-slate-600 file:mr-4 file:rounded-lg file:border-0 file:bg-brand-500 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white"
               />
               <button
@@ -397,6 +444,7 @@ export function ReportEditorPage() {
                 Upload {selectedFiles.length > 1 ? `${selectedFiles.length} files` : 'file'}
               </button>
             </div>
+            {uploadError ? <p id="upload-error" role="alert" className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{uploadError}</p> : null}
 
             {uploadedFiles.length > 0 ? (
               <ul className="mt-3 space-y-2 text-sm text-slate-600">

@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
-import type { InitiativeAdminItem } from '../types';
+import type { InitiativeAdminItem, RegistryOrganization } from '../types';
 
 const inputClass = 'w-full rounded-lg border border-slate-300 px-3 py-2 text-sm';
+const EIN_PATTERN = /^\d{2}-?\d{7}$/;
 
 export function InitiativeAdminPage() {
   const { token } = useAuth();
@@ -18,6 +19,8 @@ export function InitiativeAdminPage() {
   const [cycleStatus, setCycleStatus] = useState('UPCOMING');
   const [ein, setEin] = useState('');
   const [awardedAmount, setAwardedAmount] = useState('');
+  const [einMatch, setEinMatch] = useState<RegistryOrganization | null>(null);
+  const [einLookupMessage, setEinLookupMessage] = useState('');
   const [schemaText, setSchemaText] = useState('{\n  "title": "",\n  "sections": [],\n  "fields": []\n}');
   const [publish, setPublish] = useState(false);
   const [message, setMessage] = useState('');
@@ -30,6 +33,22 @@ export function InitiativeAdminPage() {
     setItems(data);
     setSelectedId((current) => current || data[0]?.id || '');
   };
+
+  // BR-023/BR-024: validate the EIN against the registry as it is typed and autofill the organization details.
+  useEffect(() => {
+    setEinMatch(null);
+    const candidate = ein.trim();
+    if (!token || !candidate) { setEinLookupMessage(''); return; }
+    if (!EIN_PATTERN.test(candidate)) { setEinLookupMessage('Enter a 9-digit EIN, such as 12-3456789.'); return; }
+    let active = true;
+    setEinLookupMessage('Checking the organization registry…');
+    const timeout = window.setTimeout(() => {
+      api.lookupOrganization(candidate, token)
+        .then((organization) => { if (active) { setEinMatch(organization); setEinLookupMessage(''); } })
+        .catch((err: unknown) => { if (active) setEinLookupMessage(err instanceof Error ? err.message : 'EIN lookup failed.'); });
+    }, 300);
+    return () => { active = false; window.clearTimeout(timeout); };
+  }, [ein, token]);
 
   useEffect(() => { refresh().catch((err: unknown) => setError(err instanceof Error ? err.message : 'Could not load initiatives.')); }, [token]);
 
@@ -72,7 +91,7 @@ export function InitiativeAdminPage() {
     <label className="block rounded-xl border border-slate-200 bg-white p-4 text-sm font-medium">Configure initiative<select value={selectedId} onChange={(e) => setSelectedId(e.target.value)} className={`${inputClass} mt-2`}><option value="">Select an initiative</option>{items.map((item) => <option key={item.id} value={item.id}>{item.fiscal_year} · {item.name} ({item.code})</option>)}</select></label>
     {selectedId ? <div className="grid gap-5 xl:grid-cols-3">
       <form onSubmit={createCycle} className="space-y-3 rounded-2xl border border-slate-200 bg-white p-5"><h2 className="text-lg font-semibold">Add reporting cycle</h2><input required value={cycleName} onChange={(e) => setCycleName(e.target.value)} placeholder="Cycle name" maxLength={100} className={inputClass} /><label className="block text-sm">Starts<input required type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className={`${inputClass} mt-1`} /></label><label className="block text-sm">Due<input required type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={`${inputClass} mt-1`} /></label><label className="block text-sm">Status<select value={cycleStatus} onChange={(e) => setCycleStatus(e.target.value)} className={`${inputClass} mt-1`}><option>UPCOMING</option><option>OPEN</option><option>CLOSED</option></select></label><button disabled={busy} className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white">Add cycle</button></form>
-      <form onSubmit={createAssignment} className="space-y-3 rounded-2xl border border-slate-200 bg-white p-5"><h2 className="text-lg font-semibold">Assign organization</h2><input required value={ein} onChange={(e) => setEin(e.target.value)} placeholder="Organization EIN" maxLength={10} className={inputClass} /><label className="block text-sm">Awarded amount<input required inputMode="decimal" pattern="\\d+(\\.\\d{1,2})?" value={awardedAmount} onChange={(e) => setAwardedAmount(e.target.value)} placeholder="0.00" className={`${inputClass} mt-1`} /></label><p className="text-xs text-slate-500">EIN must already exist in the active organizations registry.</p><button disabled={busy} className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white">Assign organization</button></form>
+      <form onSubmit={createAssignment} className="space-y-3 rounded-2xl border border-slate-200 bg-white p-5"><h2 className="text-lg font-semibold">Assign organization</h2><input required value={ein} onChange={(e) => setEin(e.target.value)} placeholder="Organization EIN" maxLength={10} className={inputClass} /><label className="block text-sm">Awarded amount<input required inputMode="decimal" pattern="\\d+(\\.\\d{1,2})?" value={awardedAmount} onChange={(e) => setAwardedAmount(e.target.value)} placeholder="0.00" className={`${inputClass} mt-1`} /></label>{einMatch ? <dl aria-label="Registry organization" className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900"><dt className="font-semibold">Legal name</dt><dd>{einMatch.legal_name}</dd><dt className="font-semibold">EIN</dt><dd>{einMatch.ein}</dd><dt className="font-semibold">Type</dt><dd>{einMatch.org_type === 'CITY_AGENCY' ? 'City agency' : 'CBO'}</dd><dt className="font-semibold">Borough</dt><dd>{einMatch.borough ?? '—'}</dd></dl> : <p role="status" className="text-xs text-slate-500">{einLookupMessage || 'EIN must already exist in the active organizations registry.'}</p>}<button disabled={busy || !einMatch} className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Assign organization</button></form>
       <form onSubmit={createTemplate} className="space-y-3 rounded-2xl border border-slate-200 bg-white p-5"><h2 className="text-lg font-semibold">Create form version</h2><p className="text-xs text-slate-600">A field can depend on one earlier answer using <code>"visible_when": &#123;"field_id": "has_other", "equals": true&#125;</code> or <code>"not_equals"</code>.</p><textarea required value={schemaText} onChange={(e) => setSchemaText(e.target.value)} rows={10} className={`${inputClass} font-mono`} /><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={publish} onChange={(e) => setPublish(e.target.checked)} />Publish this version</label><button disabled={busy} className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white">Create form version</button></form>
     </div> : null}
     <section className="space-y-3">{items.map((item) => <article key={item.id} className="rounded-2xl border border-slate-200 bg-white p-5"><div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-lg font-semibold">{item.name} <span className="text-sm font-normal text-slate-500">FY{item.fiscal_year} · {item.status}</span></h2><select aria-label={`Status for ${item.name}`} value={item.status} onChange={(e) => token && void perform(() => api.updateInitiative(item.id, { status: e.target.value }, token), 'Initiative status updated.')} className="rounded-lg border border-slate-300 px-2 py-1 text-xs"><option>ACTIVE</option><option>COMBINED</option><option>RETIRED</option></select></div><p className="text-sm text-slate-500">{item.code}</p>{item.lineage.length ? <p className="mt-1 text-xs text-slate-500">Lineage: {item.lineage.map((line) => `${line.relationship_type} ${line.direction} ${line.initiative_code}`).join(' · ')}</p> : null}<div className="mt-3 grid gap-4 text-sm md:grid-cols-3"><div><h3 className="font-semibold">Cycles</h3>{item.cycles.map((cycle) => <div key={cycle.id} className="mt-1 flex flex-wrap items-center justify-between gap-2"><span>{cycle.cycle_name} · due {cycle.due_date}</span><select aria-label={`Status for ${cycle.cycle_name}`} value={cycle.status} onChange={(e) => token && void perform(() => api.updateCycle(cycle.id, e.target.value, token), 'Cycle status updated.')} className="rounded border border-slate-300 px-2 py-1 text-xs"><option>UPCOMING</option><option>OPEN</option><option>CLOSED</option></select></div>)}{!item.cycles.length ? <p className="text-slate-500">None</p> : null}</div><div><h3 className="font-semibold">Assignments</h3>{item.assignments.map((assignment) => <p key={assignment.organization_id}>{assignment.legal_name} · {assignment.ein} · ${assignment.awarded_amount}</p>)}{!item.assignments.length ? <p className="text-slate-500">None</p> : null}</div><div><h3 className="font-semibold">Form versions</h3>{item.templates.map((template) => <p key={template.id}>v{template.version} · {template.is_published ? 'Published' : 'Draft'}</p>)}{!item.templates.length ? <p className="text-slate-500">None</p> : null}</div></div></article>)}</section>

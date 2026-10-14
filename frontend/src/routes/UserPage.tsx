@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
-import type { AdminUser, Role } from '../types';
+import type { AdminUser, RegistryImportSummary, Role } from '../types';
 
 type OrganizationOption = { id: string; ein: string; legal_name: string };
 const roles: Role[] = ['COUNCIL_ADMIN', 'COUNCIL_REVIEWER', 'EXTERNAL_SUBMITTER', 'VIEW_ONLY'];
@@ -18,6 +18,24 @@ export function UserPage() {
   const [busyId, setBusyId] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [importSummary, setImportSummary] = useState<RegistryImportSummary | null>(null);
+
+  const importRegistry = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!token) return;
+    const formElement = event.currentTarget;
+    const file = new FormData(formElement).get('registry');
+    if (!(file instanceof File) || !file.size) { setError('Choose the Council Finance registry CSV before importing.'); return; }
+    setBusyId('registry-import'); setError(''); setMessage(''); setImportSummary(null);
+    try {
+      const summary = await api.importOrganizationRegistry(file, token);
+      formElement.reset();
+      setImportSummary(summary);
+      setMessage(`Registry imported: ${summary.created} added, ${summary.updated} updated, ${summary.unchanged} unchanged.`);
+      await refresh();
+    } catch (err) { setError(err instanceof Error ? err.message : 'Registry import failed.'); }
+    finally { setBusyId(''); }
+  };
 
   const createAccount = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -140,6 +158,16 @@ export function UserPage() {
         <label className="block text-sm font-medium">Organization type<select name="org_type" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"><option value="CBO">CBO</option><option value="CITY_AGENCY">City agency</option></select></label>
         <input name="borough" maxLength={50} placeholder="Borough (optional)" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
         <button disabled={busyId === 'new-organization'} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50">{busyId === 'new-organization' ? 'Saving…' : 'Add organization'}</button>
+      </form>
+      <form onSubmit={(event) => void importRegistry(event)} className="space-y-3 rounded-2xl border border-slate-200 bg-white p-5 xl:col-span-2">
+        <h2 className="text-lg font-semibold">Import authoritative EIN registry</h2>
+        <p className="text-sm text-slate-600">Upload the Council Finance organization list as CSV with columns <code>ein</code>, <code>legal_name</code>, and optional <code>org_type</code>, <code>borough</code>, <code>status</code>. Every row is validated first; if any row is invalid, nothing is imported. Organizations missing from the file are reported, not removed.</p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <input required type="file" name="registry" accept=".csv,text/csv" aria-label="Registry CSV file" className="block w-full text-sm text-slate-600" />
+          <button disabled={busyId === 'registry-import'} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50">{busyId === 'registry-import' ? 'Importing…' : 'Import registry'}</button>
+        </div>
+        {importSummary?.changes.length ? <p className="text-xs text-slate-600">Updated: {importSummary.changes.join('; ')}</p> : null}
+        {importSummary?.active_not_in_registry.length ? <p className="text-xs text-amber-700">Active organizations not in this registry file: {importSummary.active_not_in_registry.join(', ')}</p> : null}
       </form>
     </div>
     {loading ? <p className="text-sm text-slate-500">Loading accounts…</p> : users.length ? users.map((account) => <article key={account.id} className="rounded-2xl border border-slate-200 bg-white p-5">

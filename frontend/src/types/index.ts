@@ -159,6 +159,23 @@ export type AdminAnalytics = {
   borough_totals: { borough: string; total: string }[];
 };
 
+export type RegistryOrganization = {
+  id: string;
+  ein: string;
+  legal_name: string;
+  org_type: 'CBO' | 'CITY_AGENCY';
+  borough: string | null;
+  status: 'ACTIVE' | 'INACTIVE';
+};
+
+export type RegistryImportSummary = {
+  created: number;
+  updated: number;
+  unchanged: number;
+  changes: string[];
+  active_not_in_registry: string[];
+};
+
 export type OpenObligation = {
   initiative_id: string;
   initiative_name: string;

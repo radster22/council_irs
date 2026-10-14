@@ -41,4 +41,8 @@ input {
   #root { min-height: 0; }
   section, header { break-inside: avoid; box-shadow: none !important; }
   input, textarea, select { border: 0 !important; padding-left: 0 !important; }
+  input[type='file'] { display: none !important; }
+  table { border-collapse: collapse !important; width: 100%; }
+  th, td { border: 1px solid #94a3b8 !important; }
+  tr { break-inside: avoid; }
 }

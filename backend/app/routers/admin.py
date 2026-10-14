@@ -9,7 +9,7 @@ from datetime import date
 from decimal import Decimal
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -40,15 +40,51 @@ from app.schemas import (
     RolloverRequest,
     RolloverResponse,
 )
+from app.services.organization_service import (
+    find_organization_by_ein,
+    import_organization_registry,
+    normalize_ein,
+    organization_details,
+)
 
 router = APIRouter(prefix="/api/admin", tags=["administration"])
 COUNCIL_ROLES = ("COUNCIL_ADMIN", "COUNCIL_REVIEWER", "VIEW_ONLY")
+MAX_REGISTRY_BYTES = 5 * 1024 * 1024
 
 
 @router.get("/organizations")
 def list_organizations(_: User = Depends(require_roles("COUNCIL_ADMIN")), db: Session = Depends(get_db)) -> list[dict[str, str]]:
     return [{"id": row.id, "ein": row.ein, "legal_name": row.legal_name}
             for row in db.scalars(select(Organization).where(Organization.status == "ACTIVE").order_by(Organization.legal_name)).all()]
+
+
+@router.get("/organizations/lookup")
+def lookup_organization(ein: str = Query(..., max_length=20), _: User = Depends(require_roles("COUNCIL_ADMIN")),
+                        db: Session = Depends(get_db)) -> dict[str, str | None]:
+    try:
+        normalize_ein(ein)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    organization = find_organization_by_ein(db, ein)
+    if organization is None:
+        raise HTTPException(status_code=404, detail="No active organization in the registry has that EIN.")
+    return organization_details(organization)
+
+
+@router.post("/organizations/import")
+async def import_organizations(file: UploadFile = File(...), _: User = Depends(require_roles("COUNCIL_ADMIN")),
+                               db: Session = Depends(get_db)) -> dict[str, object]:
+    content = await file.read(MAX_REGISTRY_BYTES + 1)
+    if len(content) > MAX_REGISTRY_BYTES:
+        raise HTTPException(status_code=413, detail="The registry file must be 5 MB or smaller.")
+    try:
+        return import_organization_registry(db, content)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="The registry could not be saved because of a conflicting EIN.") from exc
 
 
 @router.post("/organizations", status_code=201)
@@ -64,6 +100,8 @@ def create_organization(payload: OrganizationCreateRequest, _: User = Depends(re
     )
     if not organization.legal_name:
         raise HTTPException(status_code=422, detail="Organization legal name cannot be blank.")
+    if find_organization_by_ein(db, payload.ein, active_only=False) is not None:
+        raise HTTPException(status_code=409, detail="An organization with that EIN already exists.")
     db.add(organization)
     try:
         db.commit()
@@ -172,7 +210,7 @@ def update_cycle(cycle_id: str, payload: CycleUpdateRequest, _: User = Depends(r
 def create_assignment(initiative_id: str, payload: AssignmentCreateRequest, _: User = Depends(require_roles("COUNCIL_ADMIN")), db: Session = Depends(get_db)) -> dict[str, str]:
     if db.get(Initiative, initiative_id) is None:
         raise HTTPException(status_code=404, detail="Initiative not found.")
-    organization = db.scalar(select(Organization).where(Organization.ein == payload.ein.strip(), Organization.status == "ACTIVE"))
+    organization = find_organization_by_ein(db, payload.ein)
     if organization is None:
         raise HTTPException(status_code=404, detail="No active organization has that EIN.")
     assignment = InitiativeOrganization(initiative_id=initiative_id, organization_id=organization.id,

@@ -348,6 +348,17 @@ def test_upload_rejects_content_that_does_not_match_declared_file_type(submissio
     assert "content does not match" in response.json()["detail"]
 
 
+def test_upload_rejects_csv_containing_binary_data(submission_context) -> None:
+    client, token, _ = submission_context
+    response = client.post(
+        "/api/submissions/demo-report/attachments",
+        files={"file": ("budget.csv", io.BytesIO(b"MZ\x90\x00\x03\x00\x00\x00"), "text/csv")},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 400
+    assert "binary data" in response.json()["detail"]
+
+
 def test_council_admin_edit_creates_new_snapshot_and_audit_event(submission_context) -> None:
     client, _, test_session = submission_context
     with test_session() as db:
@@ -740,4 +751,92 @@ def test_review_actions_reject_invalid_transitions(submission_context) -> None:
         json={"action": "APPROVE"},
         headers={"Authorization": f"Bearer {token}"},
     )
+    assert response.status_code == 409
+
+
+def _registry_admin_token(test_session, user_id: str) -> str:
+    with test_session() as db:
+        db.add(User(id=user_id, email=f"{user_id}@example.org",
+                    password_hash=hash_password("LocalTestPassword123!"), full_name="Council Admin",
+                    role="COUNCIL_ADMIN", is_active=True))
+        db.add(Organization(id="org-registry", ein="45-6789012", legal_name="Registry Org",
+                            org_type="CBO", borough="Queens", status="ACTIVE"))
+        db.commit()
+    return create_access_token(user_id, role="COUNCIL_ADMIN")
+
+
+def test_admin_ein_lookup_autofills_registry_details_in_either_format(submission_context) -> None:
+    client, submitter_token, test_session = submission_context
+    token = _registry_admin_token(test_session, "admin-lookup")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    for ein in ("45-6789012", "456789012"):
+        response = client.get("/api/admin/organizations/lookup", params={"ein": ein}, headers=headers)
+        assert response.status_code == 200
+        assert response.json() == {"id": "org-registry", "ein": "45-6789012", "legal_name": "Registry Org",
+                                   "org_type": "CBO", "borough": "Queens", "status": "ACTIVE"}
+
+    assert client.get("/api/admin/organizations/lookup", params={"ein": "99-9999999"}, headers=headers).status_code == 404
+    malformed = client.get("/api/admin/organizations/lookup", params={"ein": "12-34"}, headers=headers)
+    assert malformed.status_code == 422
+    assert "9 digits" in malformed.json()["detail"]
+    forbidden = client.get("/api/admin/organizations/lookup", params={"ein": "45-6789012"},
+                           headers={"Authorization": f"Bearer {submitter_token}"})
+    assert forbidden.status_code == 403
+
+
+def test_assignment_accepts_unhyphenated_ein_for_registered_organization(submission_context) -> None:
+    client, _, test_session = submission_context
+    token = _registry_admin_token(test_session, "admin-assign-ein")
+    response = client.post("/api/admin/initiatives/initiative-1/assignments",
+                           json={"ein": "456789012", "awarded_amount": "500.00"},
+                           headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 201
+    with test_session() as db:
+        assert db.query(InitiativeOrganization).filter_by(
+            initiative_id="initiative-1", organization_id="org-registry").count() == 1
+
+
+def test_registry_import_creates_updates_and_reports_unlisted_organizations(submission_context) -> None:
+    client, _, test_session = submission_context
+    token = _registry_admin_token(test_session, "admin-import")
+    csv_body = (
+        "ein,legal_name,org_type,borough,status\n"
+        "456789012,Registry Org Renamed,CBO,Queens,ACTIVE\n"
+        "11-2223333,New Agency,CITY_AGENCY,Bronx,\n"
+    ).encode()
+    response = client.post("/api/admin/organizations/import",
+                           files={"file": ("registry.csv", io.BytesIO(csv_body), "text/csv")},
+                           headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    summary = response.json()
+    assert (summary["created"], summary["updated"], summary["unchanged"]) == (1, 1, 0)
+    assert summary["changes"] == ["45-6789012: legal_name"]
+    assert "1234567890" in summary["active_not_in_registry"]
+    with test_session() as db:
+        assert db.get(Organization, "org-registry").legal_name == "Registry Org Renamed"
+        created = db.query(Organization).filter_by(ein="11-2223333").one()
+        assert (created.org_type, created.borough, created.status) == ("CITY_AGENCY", "Bronx", "ACTIVE")
+
+
+def test_registry_import_rejects_whole_file_when_any_row_is_invalid(submission_context) -> None:
+    client, _, test_session = submission_context
+    token = _registry_admin_token(test_session, "admin-import-bad")
+    csv_body = b"ein,legal_name,org_type\n22-3334444,Valid Org,CBO\n123,Bad EIN Org,CBO\n33-4445555,,CBO\n"
+    response = client.post("/api/admin/organizations/import",
+                           files={"file": ("registry.csv", io.BytesIO(csv_body), "text/csv")},
+                           headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "Row 3:" in detail and "Row 4:" in detail
+    with test_session() as db:
+        assert db.query(Organization).filter_by(ein="22-3334444").count() == 0
+
+
+def test_create_organization_rejects_ein_already_registered_in_other_format(submission_context) -> None:
+    client, _, test_session = submission_context
+    token = _registry_admin_token(test_session, "admin-dup-ein")
+    response = client.post("/api/admin/organizations",
+                           json={"ein": "456789012", "legal_name": "Duplicate", "org_type": "CBO"},
+                           headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 409

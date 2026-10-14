@@ -33,3 +33,27 @@ describe('attachment requests', () => {
       .rejects.toThrow('Attachment unavailable.');
   });
 });
+
+describe('API error messages', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('throws only the detail from a JSON error body', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ detail: 'Budget total must equal the awarded amount.' }),
+      { status: 422, headers: { 'content-type': 'application/json' } },
+    )));
+
+    await expect(api.getSubmission('submission-1', 'access-token'))
+      .rejects.toThrow(/^Budget total must equal the awarded amount\.$/);
+  });
+
+  it('joins validation messages from a FastAPI detail list', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ detail: [{ loc: ['body', 'lines'], msg: 'Too many lines.' }, { msg: 'Amount is invalid.' }] }),
+      { status: 422 },
+    )));
+
+    await expect(api.getSubmission('submission-1', 'access-token'))
+      .rejects.toThrow(/^Too many lines\. Amount is invalid\.$/);
+  });
+});

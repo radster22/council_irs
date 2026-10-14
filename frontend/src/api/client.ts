@@ -14,6 +14,8 @@ import type {
   InitiativeAdminItem,
   AdminAnalytics,
   OpenObligation,
+  RegistryImportSummary,
+  RegistryOrganization,
 } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
@@ -32,6 +34,23 @@ const getAuthHeaders = (token?: string, body?: BodyInit | null) => {
   return headers;
 };
 
+// FastAPI errors arrive as {"detail": "..."} or, for validation failures, {"detail": [{"msg": "..."}]}.
+const errorMessageFrom = (body: string) => {
+  try {
+    const { detail } = JSON.parse(body) as { detail?: unknown };
+    if (typeof detail === 'string' && detail) return detail;
+    if (Array.isArray(detail)) {
+      const messages = detail
+        .map((item) => (typeof item === 'string' ? item : (item as { msg?: unknown })?.msg))
+        .filter((message): message is string => typeof message === 'string' && message.length > 0);
+      if (messages.length) return messages.join(' ');
+    }
+  } catch {
+    // Not JSON; fall back to the raw text.
+  }
+  return body || 'Request failed';
+};
+
 async function apiRequest<T>(
   path: string,
   init: RequestInit = {},
@@ -48,8 +67,7 @@ async function apiRequest<T>(
   });
 
   if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(detail || 'Request failed');
+    throw new Error(errorMessageFrom(await response.text()));
   }
 
   if (responseType === 'blob') {
@@ -77,6 +95,13 @@ export const api = {
     apiRequest<AdminUser>('/api/admin/users', { method: 'POST', body: JSON.stringify(payload) }, token),
   createOrganization: async (payload: { ein: string; legal_name: string; org_type: 'CBO' | 'CITY_AGENCY'; borough: string }, token: string) =>
     apiRequest<{ id: string; ein: string; legal_name: string }>('/api/admin/organizations', { method: 'POST', body: JSON.stringify(payload) }, token),
+  lookupOrganization: async (ein: string, token: string) =>
+    apiRequest<RegistryOrganization>(`/api/admin/organizations/lookup?ein=${encodeURIComponent(ein)}`, { method: 'GET' }, token),
+  importOrganizationRegistry: async (file: File, token: string) => {
+    const form = new FormData();
+    form.append('file', file);
+    return apiRequest<RegistryImportSummary>('/api/admin/organizations/import', { method: 'POST', body: form }, token);
+  },
   updateUser: async (userId: string, payload: { role: string; is_active: boolean; organization_eins?: string[] }, token: string) =>
     apiRequest<AdminUser>(`/api/admin/users/${encodeURIComponent(userId)}`, { method: 'PATCH', body: JSON.stringify(payload) }, token),
   resetUserPassword: async (userId: string, password: string, token: string) =>

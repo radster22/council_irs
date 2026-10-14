@@ -1,14 +1,14 @@
 # Project Diagnostics
 
-- **Review date:** 2026-10-14 (second pass)
-- **Commit / Checkpoint:** Based on `578858446fea6cf5880bdd78f3eab16ef97390c3`; the changes in Section 4 are committed on branch `fix/upload-errors-ein-registry`. Unrelated working-tree edits (`AGENTS.md` removal, new `CLAUDE.md`, `ProductionUpdate.md`, `database/schema.sql`) are not part of that commit and were not audited here.
-- **Scope:** Active local demo requirements, file upload validation and error UX, EIN registry validation/autofill, budget grid editing, review/revision workflow, exports, print layout, and verification suite.
+- **Review date:** 2026-10-14 (third pass)
+- **Commit / Checkpoint:** Based on `master` at `9beaee3`. Third-pass changes (items 6–7 in Section 4) are committed on `feat/collapsible-sidebar` and merged into `master`. Earlier items are in `cfaba72`.
+- **Scope:** Active local demo requirements, file upload validation and error UX, EIN registry validation/autofill, budget grid editing, review/revision workflow, exports, print layout, sidebar navigation, schema setup safety, and verification suite.
 
 ---
 
 ## 1. Review Basis and Limits
 
-This audit evaluates the codebase against [`.claude/rules/02-business-rules.md`](.claude/rules/02-business-rules.md) and `CLAUDE.md` / `AGENTS.md`.
+This audit evaluates the codebase against [`.claude/rules/02-business-rules.md`](.claude/rules/02-business-rules.md) and `CLAUDE.md`, which replaced `AGENTS.md` in `9beaee3`.
 - Evaluated strictly within the local host boundary: local MySQL 8.0, filesystem storage at repository-root `.uploads/`, and console-logged notifications.
 - Database DDL in `database/schema.sql` is treated as a frozen contract. No schema change was made; the registry import writes only existing `organizations` columns.
 - **Live MySQL was not checked in this review.** Backend results come from the SQLite-backed test suite, which cannot prove MySQL JSON/ENUM/trigger compatibility.
@@ -26,16 +26,16 @@ The project is functionally ready for the primary local demonstration path. All 
 
 ---
 
-## 3. Verification Summary (2026-10-14, second pass)
+## 3. Verification Summary (2026-10-14, third pass)
 
 | Check | Result | Notes |
 | :--- | :--- | :--- |
-| `python -m compileall -q backend/app` | **Passed** | No compile errors. |
-| `python -m pytest backend/tests -q` | **Passed** | 64 passed, 0 skipped, 1 warning (Open Issue 1). Includes 5 new EIN registry tests. |
+| `python -m compileall -q backend/app` | **Passed** | Run by the pre-commit hook for the third-pass commit. No backend code changed in this pass. |
+| `python -m pytest backend/tests -q` | **Passed** | 64 passed, 0 skipped, 1 warning (Open Issue 1). |
 | `npm run lint` from `frontend/` | **Passed** | `tsc --noEmit` reported zero errors. |
-| `npm test -- --run` from `frontend/` | **Passed** | 56 passed across 3 files, including 4 new `ReportEditorPage.test.tsx` tests. The focus test was confirmed to fail against the old `${index}-${line.category}` key. |
+| `npm test -- --run` from `frontend/` | **Passed** | 58 passed across 4 files, including 2 new `Layout.test.tsx` sidebar tests. The editor focus test still fails against the old `${index}-${line.category}` key, as intended. |
 | `npm run build` from `frontend/` | **Passed** | Vite production build succeeded. |
-| `git diff --check` | **Passed after this update** | The previous diagnostics file had trailing-space Markdown line breaks, which would have failed the pre-commit hook. This version removes them. |
+| `git diff --check` | **Passed** | No whitespace errors. |
 | Live MySQL Introspection | **Not run** | No live connection was attempted. |
 | Manual browser check | **Not run** | UI behavior is verified by component tests, type-check, and build only. |
 
@@ -50,6 +50,8 @@ The project is functionally ready for the primary local demonstration path. All 
 | 3 | **BR-023: EIN master validation was partial.** | New `backend/app/services/organization_service.py` holds EIN normalization, registry lookup, and `import_organization_registry`. `POST /api/admin/organizations/import` (admin only, CSV up to 5 MB) validates every row (EIN format, required legal name, type/status values, field lengths, duplicate EINs). One bad row rejects the whole file with row-numbered errors. Otherwise it creates new organizations, updates changed details, and lists active organizations missing from the file without deleting or deactivating them. The panel is on `UserPage.tsx`. | Backend tests cover create/update/report summary and rejecting a whole file for one invalid row. |
 | 4 | **EIN format mismatch in assignment.** `create_assignment` compared the raw string, so `456789012` did not match a stored `45-6789012`. Manual organization creation could also duplicate an EIN stored in the other format. | Both now use `find_organization_by_ein`, which accepts either format. A duplicate creation returns 409. | Two backend tests. |
 | 5 | **No editor UI test coverage.** | Added `frontend/src/routes/ReportEditorPage.test.tsx` covering Category focus retention, the latest revision comment banner, and upload size handling. | 4 tests pass. |
+| 6 | **`database/schema.sql` began with `DROP DATABASE IF EXISTS council_irs_db;`** (added in `9beaee3`). Running the setup file would have deleted all submissions, audit logs, and version snapshots, which contradicts the file header, `03-security.md`, and BR-019. | Line removed; the file again creates objects only. | `git diff` shows the restored original blank line. Not run against MySQL. |
+| 7 | **Sidebar could not be collapsed.** | `frontend/src/components/Layout.tsx` has a chevron toggle (`Collapse sidebar` / `Expand sidebar`, with `aria-expanded`). Collapsed (64 px), the portal title is hidden, each nav link shows its first letter with the full name as tooltip and accessible label, the user shows as a first-initial avatar, and Log out is an icon-only button. Expanded shows the full layout plus a logout icon. Main content margin follows the width. The state is remembered per browser in `localStorage` (failures ignored). No new dependencies; icons are inline SVG. | `Layout.test.tsx`: collapse/expand content, initials, icon-only logout, persisted state, and logout from the collapsed state. Existing `Log out` route test still passes. |
 
 Resolved in the first pass on 2026-10-14 (retained for history): budget row key focus bug, JSON error-detail parsing, revision comment banner, client-side 25 MB pre-check, CSV binary-content test, XLSX test no longer skipped, and print table borders.
 
@@ -76,7 +78,7 @@ Resolved in the first pass on 2026-10-14 (retained for history): budget row key 
 | **BR-005** | Organization Assignments | **Implemented** | Assignments via `/api/admin/initiatives/{id}/assignments`, accepting either EIN format. |
 | **BR-006** | Separate Obligations | **Implemented** | Unique constraint `(initiative_id, organization_id, cycle_id)`. |
 | **BR-007** | Multiple Submitters | **Implemented** | Multiple accounts linked via `user_organizations`. |
-| **BR-008** | 100-Line Financial Grid | **Implemented** | 1–100 row grid with totals and variance; Category focus covered by a component test. |
+| **BR-008** | 100-Line Financial Grid | **Implemented** | 1â€“100 row grid with totals and variance; Category focus covered by a component test. |
 | **BR-009** | EIN-Based Eligibility | **Implemented** | Submissions restricted to assigned initiative/cycle tuples. |
 | **BR-010** | Access Isolation | **Implemented** | Backend organization-membership checks on all data access. |
 | **BR-011** | Account-Based Identity | **Implemented** | JWT authentication with bcrypt password verification. |

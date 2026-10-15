@@ -57,9 +57,9 @@ export function DashboardPage() {
   return (
     <div className="space-y-6">
       <header>
-        <p className="text-sm font-medium uppercase tracking-[0.2em] text-brand-500">Overview</p>
-        <h1 className="mt-2 text-3xl font-bold text-slate-900">Submitter dashboard</h1>
-        <p className="mt-2 text-sm text-slate-600">Start a report assigned to your organization or continue work already saved.</p>
+        <p className="eyebrow">Overview</p>
+        <h1 className="page-title">Submitter dashboard</h1>
+        <p className="page-lead">Start a report assigned to your organization or continue work already saved.</p>
       </header>
 
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -77,9 +77,9 @@ export function DashboardPage() {
         </section>
       ) : null}
 
-      {loadError ? <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{loadError}</div> : null}
+      {loadError ? <div role="alert" className="alert-error">{loadError}</div> : null}
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <section className="card p-6 shadow-sm">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-xl font-semibold text-slate-900">My reports</h2>
           <button type="button" onClick={refreshDashboard} className="text-sm font-medium text-brand-700 hover:underline">
@@ -110,7 +110,7 @@ export function DashboardPage() {
       </section>
 
       {user?.role === 'EXTERNAL_SUBMITTER' ? (
-        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <section className="card p-6 shadow-sm">
           <h2 className="mb-4 text-xl font-semibold text-slate-900">Available reports</h2>
           {!loading && available.length === 0 && hasOrganizationAccess ? (
             <p className="mb-4 rounded-lg bg-slate-50 p-4 text-sm text-slate-600">There are no new eligible reports for your linked organizations right now. This list updates when Council opens an assigned reporting cycle and publishes its form.</p>
@@ -139,7 +139,7 @@ export function DashboardPage() {
         </section>
       ) : null}
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <section className="card p-6 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-sm font-medium uppercase tracking-wide text-brand-600">Reporting workflow</p>

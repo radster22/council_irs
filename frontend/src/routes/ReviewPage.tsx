@@ -67,14 +67,14 @@ export function ReviewPage() {
     <div className="space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-sm font-medium uppercase tracking-[0.2em] text-brand-500">Council Finance Admin Hub</p>
-          <h1 className="mt-2 text-3xl font-bold text-slate-900">Submission oversight</h1>
-          <p className="mt-2 text-sm text-slate-600">Review incoming reports, find flagged budget balances, and track dispositions.</p>
+          <p className="eyebrow">Council Finance Admin Hub</p>
+          <h1 className="page-title">Submission oversight</h1>
+          <p className="page-lead">Review incoming reports, find flagged budget balances, and track dispositions.</p>
         </div>
         <div className="no-print flex flex-wrap gap-2">
-          <button onClick={() => downloadExport('xlsx')} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700">Download Excel</button>
-          <button onClick={() => downloadExport('csv')} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700">Download CSV bundle</button>
-          {user?.role === 'COUNCIL_ADMIN' ? <Link to="/admin/initiatives" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700">Initiatives & forms</Link> : null}
+          <button onClick={() => downloadExport('xlsx')} className="btn-secondary px-3">Download Excel</button>
+          <button onClick={() => downloadExport('csv')} className="btn-secondary px-3">Download CSV bundle</button>
+          {user?.role === 'COUNCIL_ADMIN' ? <Link to="/admin/initiatives" className="btn-secondary px-3">Initiatives & forms</Link> : null}
           {user?.role === 'COUNCIL_ADMIN' ? <Link to="/admin/rollover" className="rounded-lg border border-brand-300 bg-white px-3 py-2 text-sm font-semibold text-brand-700">Annual rollover</Link> : null}
         </div>
       </header>
@@ -89,17 +89,17 @@ export function ReviewPage() {
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-2xl border border-slate-200 bg-white p-5"><h2 className="font-semibold text-slate-900">Submission status</h2><div className="mt-4 space-y-3">
+        <div className="card p-5"><h2 className="font-semibold text-slate-900">Submission status</h2><div className="mt-4 space-y-3">
           {Object.entries(analytics?.status_counts ?? {}).map(([label, value]) => { const maximum = Math.max(1, ...Object.values(analytics?.status_counts ?? {})); return <div key={label}><div className="mb-1 flex justify-between text-sm"><span>{label}</span><span>{value}</span></div><div className="h-2 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-brand-500" style={{ width: `${Math.max(3, (value / maximum) * 100)}%` }} /></div></div>; })}
           {!Object.keys(analytics?.status_counts ?? {}).length ? <p className="text-sm text-slate-500">No submissions are recorded.</p> : null}
         </div></div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-5"><h2 className="font-semibold text-slate-900">Reported budget by borough</h2><div className="mt-4 space-y-3">
+        <div className="card p-5"><h2 className="font-semibold text-slate-900">Reported budget by borough</h2><div className="mt-4 space-y-3">
           {(analytics?.borough_totals ?? []).map((item) => { const values = analytics?.borough_totals ?? []; const maximum = values.reduce((current, entry) => toCents(entry.total) > toCents(current) ? entry.total : current, '0.00'); return <div key={item.borough}><div className="mb-1 flex justify-between text-sm"><span>{item.borough}</span><span>${item.total}</span></div><div className="h-2 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-emerald-600" style={{ width: `${Math.max(3, barWidth(item.total, maximum))}%` }} /></div></div>; })}
           {!analytics?.borough_totals.length ? <p className="text-sm text-slate-500">No borough totals are available.</p> : null}
         </div></div>
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5">
+      <section className="card p-5">
         <h2 className="font-semibold text-slate-900">Open reporting obligations</h2>
         <p className="mt-1 text-sm text-slate-600">Eligible organization and cycle assignments without a started report.</p>
         <div className="mt-3 overflow-x-auto"><table className="w-full min-w-[700px] text-left text-sm"><thead><tr className="border-b text-xs uppercase text-slate-500"><th className="py-2">Initiative</th><th>Organization</th><th>Cycle</th><th>Due</th><th>Awarded</th></tr></thead><tbody>
@@ -108,29 +108,29 @@ export function ReviewPage() {
       </section>
 
       <section className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-2 xl:grid-cols-4">
-        <label className="text-sm font-medium text-slate-700">Search
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Initiative, organization, cycle, or ID" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" />
+        <label className="field-label">Search
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Initiative, organization, cycle, or ID" className="input mt-1 font-normal" />
         </label>
-        <label className="text-sm font-medium text-slate-700">Organization EIN
-          <input value={ein} onChange={(event) => setEin(event.target.value)} placeholder="Search EIN" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" />
+        <label className="field-label">Organization EIN
+          <input value={ein} onChange={(event) => setEin(event.target.value)} placeholder="Search EIN" className="input mt-1 font-normal" />
         </label>
-        <label className="text-sm font-medium text-slate-700">Borough
-          <select value={borough} onChange={(event) => setBorough(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal">
+        <label className="field-label">Borough
+          <select value={borough} onChange={(event) => setBorough(event.target.value)} className="input mt-1 font-normal">
             <option value="">All boroughs</option>
             {['Manhattan', 'Brooklyn', 'Queens', 'Bronx', 'Staten Island', 'Citywide'].map((value) => <option key={value}>{value}</option>)}
           </select>
         </label>
-        <label className="text-sm font-medium text-slate-700">Fiscal year
-          <input type="number" min="2000" max="2200" value={fiscalYear} onChange={(event) => setFiscalYear(event.target.value)} placeholder="All years" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" />
+        <label className="field-label">Fiscal year
+          <input type="number" min="2000" max="2200" value={fiscalYear} onChange={(event) => setFiscalYear(event.target.value)} placeholder="All years" className="input mt-1 font-normal" />
         </label>
-        <label className="text-sm font-medium text-slate-700">Initiative
-          <input value={initiativeFilter} onChange={(event) => setInitiativeFilter(event.target.value)} placeholder="Initiative name" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" />
+        <label className="field-label">Initiative
+          <input value={initiativeFilter} onChange={(event) => setInitiativeFilter(event.target.value)} placeholder="Initiative name" className="input mt-1 font-normal" />
         </label>
-        <label className="text-sm font-medium text-slate-700">Reporting cycle
-          <input value={cycleFilter} onChange={(event) => setCycleFilter(event.target.value)} placeholder="Cycle name" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" />
+        <label className="field-label">Reporting cycle
+          <input value={cycleFilter} onChange={(event) => setCycleFilter(event.target.value)} placeholder="Cycle name" className="input mt-1 font-normal" />
         </label>
-        <label className="text-sm font-medium text-slate-700">Status
-          <select value={status} onChange={(event) => setStatus(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal">
+        <label className="field-label">Status
+          <select value={status} onChange={(event) => setStatus(event.target.value)} className="input mt-1 font-normal">
             <option value="">All reports</option>
             {['DRAFT', 'SUBMITTED', 'IN_REVIEW', 'REVISION_REQUESTED', 'APPROVED', 'REJECTED'].map((value) => <option key={value}>{value}</option>)}
           </select>
@@ -141,7 +141,7 @@ export function ReviewPage() {
         </label>
       </section>
 
-      {error ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error.message}</div> : null}
+      {error ? <div className="alert-error">{error.message}</div> : null}
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="grid grid-cols-[1.1fr_1.2fr_1fr_150px_120px_110px] gap-3 border-b border-slate-200 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
           <span>Initiative</span><span>Organization</span><span>Cycle</span><span>Status</span><span>Budget</span><span>Balance</span>

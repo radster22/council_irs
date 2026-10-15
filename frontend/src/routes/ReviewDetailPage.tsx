@@ -60,11 +60,11 @@ export function ReviewDetailPage() {
     <div className="space-y-6">
       <Link to="/review" className="text-sm font-medium text-brand-700 hover:underline">← Back to oversight queue</Link>
       <header>
-        <p className="text-sm font-medium uppercase tracking-[0.2em] text-brand-500">Council review</p>
-        <h1 className="mt-2 text-3xl font-bold text-slate-900">{submission.initiative_name}</h1>
+        <p className="eyebrow">Council review</p>
+        <h1 className="page-title">{submission.initiative_name}</h1>
         <p className="mt-2 text-slate-600">{submission.organization_name} · {submission.cycle_name}</p>
         <div className="no-print mt-3 flex gap-3">
-          <button type="button" onClick={() => window.print()} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700">Print / Save PDF</button>
+          <button type="button" onClick={() => window.print()} className="btn-secondary px-3">Print / Save PDF</button>
           {user?.role === 'COUNCIL_ADMIN' && submission.status !== 'DRAFT' ? <Link to={`/review/${encodeURIComponent(submissionId)}/edit`} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white">Edit with audit version</Link> : null}
         </div>
       </header>
@@ -75,7 +75,7 @@ export function ReviewDetailPage() {
         ].map(([label, value]) => <div key={label} className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs uppercase tracking-wide text-slate-500">{label}</div><div className="mt-1 font-semibold text-slate-900">{value}</div></div>)}
       </div>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-6">
+      <section className="card p-6">
         <h2 className="text-lg font-semibold text-slate-900">Report responses</h2>
         <dl className="mt-4 grid gap-4 md:grid-cols-2">
           {fields.map((field) => <div key={field.id} className="rounded-lg bg-slate-50 p-4"><dt className="text-sm font-medium text-slate-500">{field.label ?? field.id}</dt><dd className="mt-1 whitespace-pre-wrap text-sm text-slate-900">{String(submission.form_data[field.id] ?? '—')}</dd></div>)}
@@ -94,13 +94,13 @@ export function ReviewDetailPage() {
         </ul>
       </section>
 
-      {canReview ? <section className="rounded-2xl border border-slate-200 bg-white p-6">
+      {canReview ? <section className="card p-6">
         <h2 className="text-lg font-semibold text-slate-900">Review disposition</h2>
         <label className="mt-3 block text-sm font-medium text-slate-700">Comment <span className="font-normal text-slate-500">(optional; included in audit history)</span>
-          <textarea value={comment} onChange={(event) => setComment(event.target.value)} maxLength={5000} rows={3} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" />
+          <textarea value={comment} onChange={(event) => setComment(event.target.value)} maxLength={5000} rows={3} className="input mt-1" />
         </label>
         <div className="mt-4 flex flex-wrap gap-3">
-          {canStart ? <button disabled={busy} onClick={() => act('START_REVIEW')} className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Start review</button> : null}
+          {canStart ? <button disabled={busy} onClick={() => act('START_REVIEW')} className="btn-primary">Start review</button> : null}
           {canDispose ? <>
             <button disabled={busy} onClick={() => act('REQUEST_REVISION')} className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-900 disabled:opacity-50">Request updates</button>
             <button disabled={busy} onClick={() => act('APPROVE')} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Approve</button>
@@ -111,7 +111,7 @@ export function ReviewDetailPage() {
         {error ? <p className="mt-3 text-sm text-red-700">{error}</p> : null}{message ? <p className="mt-3 text-sm text-emerald-700">{message}</p> : null}
       </section> : null}
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-6">
+      <section className="card p-6">
         <h2 className="text-lg font-semibold text-slate-900">Submission versions</h2>
         <ol className="mt-3 space-y-3">
           {submission.versions.map((version) => <li key={version.version_number} className="border-l-2 border-brand-300 pl-4 text-sm"><div className="font-medium text-slate-800">Version {version.version_number} · Form version {version.template_version}</div><div className="text-xs text-slate-500">{version.submitted_at ?? 'Time unavailable'}</div>{version.reviewer_notes ? <p className="mt-1 whitespace-pre-wrap text-slate-700">{version.reviewer_notes}</p> : null}<details className="mt-2"><summary className="cursor-pointer text-brand-700">View immutable snapshot</summary><pre className="mt-2 max-h-96 overflow-auto rounded-lg bg-slate-50 p-3 text-xs">{JSON.stringify({ form: version.form_snapshot, budget: version.budget_snapshot }, null, 2)}</pre></details></li>)}
@@ -119,7 +119,7 @@ export function ReviewDetailPage() {
         </ol>
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-6">
+      <section className="card p-6">
         <h2 className="text-lg font-semibold text-slate-900">Audit history</h2>
         <ol className="mt-3 space-y-3">
           {submission.audit_history.map((event, index) => <li key={`${event.action}-${event.created_at}-${index}`} className="border-l-2 border-slate-200 pl-4 text-sm">

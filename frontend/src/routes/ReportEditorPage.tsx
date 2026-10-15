@@ -307,9 +307,9 @@ export function ReportEditorPage() {
   return (
     <div className="space-y-6">
       <header>
-        <p className="text-sm font-medium uppercase tracking-[0.2em] text-brand-500">Reporting</p>
-        <h1 className="mt-2 text-3xl font-bold text-slate-900">{isAdminEdit ? 'Council report edit' : 'Submission editor'}</h1>
-        <p className="mt-2 text-sm text-slate-600">{isAdminEdit ? 'Changes are saved as a new immutable version and recorded in the audit history.' : 'Complete each stage, save your draft, then submit after reviewing the server checks.'}</p>
+        <p className="eyebrow">Reporting</p>
+        <h1 className="page-title">{isAdminEdit ? 'Council report edit' : 'Submission editor'}</h1>
+        <p className="page-lead">{isAdminEdit ? 'Changes are saved as a new immutable version and recorded in the audit history.' : 'Complete each stage, save your draft, then submit after reviewing the server checks.'}</p>
         <p aria-live="polite" className="mt-2 text-xs font-medium text-slate-500">{autosaveState}</p>
       </header>
 
@@ -337,7 +337,7 @@ export function ReportEditorPage() {
       </nav>
 
       {!loading ? (
-        <section id="report-step-1" className="scroll-mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <section id="report-step-1" className="card scroll-mt-6 p-6 shadow-sm">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-brand-600">Step 1 · Programmatic metrics and narrative</p>
           <h2 className="mb-4 text-xl font-semibold text-slate-900">Report questions</h2>
           {visibleFormFields.length === 0 ? <p className="text-sm text-slate-500">No questions apply to the current responses. Continue to the budget stage.</p> : null}
@@ -381,7 +381,7 @@ export function ReportEditorPage() {
       ) : null}
 
       <section className="grid gap-6 lg:grid-cols-[1.5fr_0.8fr]">
-        <div id="report-step-2" className="scroll-mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div id="report-step-2" className="card scroll-mt-6 p-6 shadow-sm">
           <div className="mb-4 flex items-center justify-between">
             <div>
               <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-brand-600">Step 2 · Budget</p>
@@ -404,10 +404,10 @@ export function ReportEditorPage() {
                 {lines.map((line, index) => (
                   <tr key={index} className="border-b border-slate-100">
                     <td className="px-2 py-2 font-medium text-slate-600">{index + 1}</td>
-                    <td className="px-2 py-2"><input disabled={!canEdit} value={line.category} onChange={(event) => updateLine(index, 'category', event.target.value)} placeholder="Category" maxLength={100} className="w-full rounded-lg border border-slate-300 px-3 py-2" /></td>
-                    <td className="px-2 py-2"><input disabled={!canEdit} value={line.description ?? ''} onChange={(event) => updateLine(index, 'description', event.target.value)} placeholder="Optional description" maxLength={500} className="w-full rounded-lg border border-slate-300 px-3 py-2" /></td>
-                    <td className="px-2 py-2"><input disabled={!canEdit} value={line.amount} onChange={(event) => updateLine(index, 'amount', event.target.value)} placeholder="0.00" inputMode="decimal" className="w-full rounded-lg border border-slate-300 px-3 py-2" /></td>
-                    <td className="px-2 py-2"><input disabled={!canEdit} value={line.actual_amount ?? ''} onChange={(event) => updateLine(index, 'actual_amount', event.target.value)} placeholder="Optional" inputMode="decimal" className="w-full rounded-lg border border-slate-300 px-3 py-2" /></td>
+                    <td className="px-2 py-2"><input disabled={!canEdit} value={line.category} onChange={(event) => updateLine(index, 'category', event.target.value)} placeholder="Category" maxLength={100} className="input" /></td>
+                    <td className="px-2 py-2"><input disabled={!canEdit} value={line.description ?? ''} onChange={(event) => updateLine(index, 'description', event.target.value)} placeholder="Optional description" maxLength={500} className="input" /></td>
+                    <td className="px-2 py-2"><input disabled={!canEdit} value={line.amount} onChange={(event) => updateLine(index, 'amount', event.target.value)} placeholder="0.00" inputMode="decimal" className="input" /></td>
+                    <td className="px-2 py-2"><input disabled={!canEdit} value={line.actual_amount ?? ''} onChange={(event) => updateLine(index, 'actual_amount', event.target.value)} placeholder="Optional" inputMode="decimal" className="input" /></td>
                     <td className="px-2 py-2"><button type="button" onClick={() => removeLine(index)} disabled={!canEdit} className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100">Remove</button></td>
                   </tr>
                 ))}
@@ -458,7 +458,7 @@ export function ReportEditorPage() {
           </div>
         </div>
 
-        <div id="report-step-4" className="scroll-mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div id="report-step-4" className="card scroll-mt-6 p-6 shadow-sm">
           <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-brand-600">Step 4 · Review and final submit</p>
           <h2 className="text-xl font-semibold text-slate-900">Review your report</h2>
           <dl className="mt-4 space-y-3 text-sm text-slate-600">
@@ -470,7 +470,7 @@ export function ReportEditorPage() {
           <p className="mt-3 text-xs text-slate-500">The final submission check runs against the published form’s configured reconciliation rule on the server.</p>
 
           <div className="mt-6 grid gap-3">
-            {isAdminEdit ? <label className="text-sm font-medium text-slate-700">Required audit note<textarea value={adminEditComment} onChange={(event) => setAdminEditComment(event.target.value)} maxLength={5000} rows={3} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label> : null}
+            {isAdminEdit ? <label className="field-label">Required audit note<textarea value={adminEditComment} onChange={(event) => setAdminEditComment(event.target.value)} maxLength={5000} rows={3} className="input mt-1" /></label> : null}
             {isAdminEdit ? <button type="button" onClick={() => saveSubmission('SUBMITTED')} disabled={!canEdit || saving || !adminEditComment.trim()} className="w-full rounded-lg bg-brand-500 px-4 py-3 text-sm font-semibold text-white disabled:opacity-60">{saving ? 'Saving audited version...' : 'Save audited changes'}</button> : null}
             {!isAdminEdit ? <>
             <button

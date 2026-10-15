@@ -45,7 +45,7 @@ export function LoginPage() {
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-lg">
         <div className="mb-6 text-center">
           <div className="text-xs uppercase tracking-[0.28em] text-brand-500">Council Portal</div>
-          <h1 className="mt-2 text-3xl font-bold text-slate-900">Sign in</h1>
+          <h1 className="page-title">Sign in</h1>
         </div>
 
         <div className="mb-5">
@@ -75,7 +75,7 @@ export function LoginPage() {
               value={email}
               disabled={submitting}
               onChange={(event) => setEmail(event.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+              className="input outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
               required
             />
           </div>
@@ -90,7 +90,7 @@ export function LoginPage() {
               value={password}
               disabled={submitting}
               onChange={(event) => setPassword(event.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+              className="input outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
               required
             />
           </div>

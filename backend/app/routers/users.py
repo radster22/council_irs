@@ -17,6 +17,29 @@ from app.schemas import AdminPasswordResetRequest, AdminUserCreateRequest, Admin
 router = APIRouter(prefix="/api/admin/users", tags=["administration"])
 
 
+def _normalize_eins(values: list[str]) -> list[str]:
+    return list(dict.fromkeys(value.strip() for value in values if value.strip()))
+
+
+def _active_organizations(db: Session, eins: list[str]) -> list[Organization]:
+    organizations = db.scalars(select(Organization).where(
+        Organization.ein.in_(eins), Organization.status == "ACTIVE"
+    )).all() if eins else []
+    if len(organizations) != len(eins):
+        raise HTTPException(status_code=422, detail="One or more EINs do not identify an active organization.")
+    return list(organizations)
+
+
+def _add_memberships(db: Session, user_id: str, organizations: list[Organization]) -> None:
+    for index, organization in enumerate(organizations):
+        db.add(UserOrganization(user_id=user_id, organization_id=organization.id, is_primary=index == 0))
+
+
+def _user_response(user: User, organization_ids: list[str]) -> AdminUserResponse:
+    return AdminUserResponse(id=user.id, email=user.email, full_name=user.full_name, role=user.role,
+                             is_active=user.is_active, organization_ids=organization_ids)
+
+
 @router.post("", response_model=AdminUserResponse, status_code=201)
 def create_user(
     payload: AdminUserCreateRequest,
@@ -27,16 +50,12 @@ def create_user(
     full_name = payload.full_name.strip()
     if not email or not full_name:
         raise HTTPException(status_code=422, detail="Email and full name cannot be blank.")
-    normalized_eins = list(dict.fromkeys(value.strip() for value in payload.organization_eins if value.strip()))
+    normalized_eins = _normalize_eins(payload.organization_eins)
     if payload.role == "EXTERNAL_SUBMITTER" and not normalized_eins:
         raise HTTPException(status_code=422, detail="External submitters must have at least one organization assignment.")
     if payload.role != "EXTERNAL_SUBMITTER" and normalized_eins:
         raise HTTPException(status_code=422, detail="Only external submitters can be assigned organizations.")
-    organizations = db.scalars(select(Organization).where(
-        Organization.ein.in_(normalized_eins), Organization.status == "ACTIVE"
-    )).all() if normalized_eins else []
-    if len(organizations) != len(normalized_eins):
-        raise HTTPException(status_code=422, detail="One or more EINs do not identify an active organization.")
+    organizations = _active_organizations(db, normalized_eins)
     try:
         password_hash = hash_password(payload.password)
     except ValueError as exc:
@@ -44,15 +63,13 @@ def create_user(
     user = User(id=str(uuid4()), email=email, password_hash=password_hash, full_name=full_name,
                 role=payload.role, is_active=True)
     db.add(user)
-    for index, organization in enumerate(organizations):
-        db.add(UserOrganization(user_id=user.id, organization_id=organization.id, is_primary=index == 0))
+    _add_memberships(db, user.id, organizations)
     try:
         db.commit()
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=409, detail="An account with that email already exists.") from exc
-    return AdminUserResponse(id=user.id, email=user.email, full_name=user.full_name, role=user.role,
-                             is_active=user.is_active, organization_ids=[organization.id for organization in organizations])
+    return _user_response(user, [organization.id for organization in organizations])
 
 
 @router.get("", response_model=list[AdminUserResponse])
@@ -71,17 +88,7 @@ def list_users(
         users[user.id] = user
         if organization_id is not None:
             organizations[user.id].append(organization_id)
-    return [
-        AdminUserResponse(
-            id=user.id,
-            email=user.email,
-            full_name=user.full_name,
-            role=user.role,
-            is_active=user.is_active,
-            organization_ids=organizations[user.id],
-        )
-        for user in users.values()
-    ]
+    return [_user_response(user, organizations[user.id]) for user in users.values()]
 
 
 @router.patch("/{user_id}", response_model=AdminUserResponse)
@@ -102,15 +109,9 @@ def update_user(
             raise HTTPException(status_code=409, detail="At least one active Council administrator must remain.")
     memberships = db.scalars(select(UserOrganization).where(UserOrganization.user_id == user.id)).all()
     if payload.organization_eins is not None:
-        normalized_eins = list(dict.fromkeys(value.strip() for value in payload.organization_eins if value.strip()))
-        organizations = db.scalars(select(Organization).where(
-            Organization.ein.in_(normalized_eins), Organization.status == "ACTIVE"
-        )).all() if normalized_eins else []
-        if len(organizations) != len(normalized_eins):
-            raise HTTPException(status_code=422, detail="One or more EINs do not identify an active organization.")
+        organizations = _active_organizations(db, _normalize_eins(payload.organization_eins))
         db.execute(delete(UserOrganization).where(UserOrganization.user_id == user.id))
-        for index, organization in enumerate(organizations):
-            db.add(UserOrganization(user_id=user.id, organization_id=organization.id, is_primary=index == 0))
+        _add_memberships(db, user.id, organizations)
         memberships = []
     if payload.role == "EXTERNAL_SUBMITTER" and not (payload.organization_eins if payload.organization_eins is not None else memberships):
         raise HTTPException(status_code=422, detail="External submitters must have at least one organization assignment.")
@@ -124,8 +125,7 @@ def update_user(
         raise HTTPException(status_code=409, detail="Account update conflicts with the database.") from exc
     db.refresh(user)
     organization_ids = list(db.scalars(select(UserOrganization.organization_id).where(UserOrganization.user_id == user.id)).all())
-    return AdminUserResponse(id=user.id, email=user.email, full_name=user.full_name, role=user.role,
-                             is_active=user.is_active, organization_ids=organization_ids)
+    return _user_response(user, organization_ids)
 
 
 @router.post("/{user_id}/reset-password", status_code=204)

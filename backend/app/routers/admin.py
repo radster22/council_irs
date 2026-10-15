@@ -46,6 +46,7 @@ from app.services.organization_service import (
     normalize_ein,
     organization_details,
 )
+from app.services.submission_service import SUPPORTED_FIELD_TYPES
 
 router = APIRouter(prefix="/api/admin", tags=["administration"])
 COUNCIL_ROLES = ("COUNCIL_ADMIN", "COUNCIL_REVIEWER", "VIEW_ONLY")
@@ -239,7 +240,6 @@ def create_template(initiative_id: str, payload: FormTemplateCreateRequest, _: U
         if not isinstance(section, dict) or not isinstance(section.get("fields", []), list):
             raise HTTPException(status_code=422, detail="Every form section must contain a fields list.")
         fields.extend(section.get("fields", []))
-    allowed_types = {"text", "textarea", "narrative", "integer", "number", "currency", "percentage", "date", "select", "dropdown", "boolean"}
     identifiers: set[str] = set()
     for field in fields:
         if not isinstance(field, dict) or not isinstance(field.get("id"), str) or not re.fullmatch(r"[a-zA-Z][a-zA-Z0-9_]{0,63}", field["id"]):
@@ -248,7 +248,7 @@ def create_template(initiative_id: str, payload: FormTemplateCreateRequest, _: U
             raise HTTPException(status_code=422, detail="Form field identifiers must be unique.")
         identifiers.add(field["id"])
         field_type = field.get("type", "text")
-        if not isinstance(field_type, str) or field_type not in allowed_types:
+        if not isinstance(field_type, str) or field_type not in SUPPORTED_FIELD_TYPES:
             raise HTTPException(status_code=422, detail=f"Unsupported form field type for {field['id']}.")
         if field_type in {"select", "dropdown"} and (not isinstance(field.get("options"), list) or any(not isinstance(option, str) for option in field["options"])):
             raise HTTPException(status_code=422, detail=f"Select field {field['id']} needs an options list.")
@@ -340,6 +340,11 @@ def analytics(_: User = Depends(require_roles(*COUNCIL_ROLES)), db: Session = De
     }
 
 
+def _formula_safe(text: str) -> str:
+    # Prefix values a spreadsheet would treat as formulas so they open as plain text.
+    return f"'{text}" if text.startswith(("=", "+", "-", "@")) else text
+
+
 def _csv_bytes(rows: list[dict[str, object]], headers: list[str]) -> bytes:
     stream = io.StringIO(newline="")
     writer = csv.DictWriter(stream, fieldnames=headers, extrasaction="ignore")
@@ -347,8 +352,7 @@ def _csv_bytes(rows: list[dict[str, object]], headers: list[str]) -> bytes:
     for row in rows:
         safe = {}
         for key, value in row.items():
-            text = "" if value is None else str(value)
-            safe[key] = f"'{text}" if text.startswith(("=", "+", "-", "@")) else text
+            safe[key] = _formula_safe("" if value is None else str(value))
         writer.writerow(safe)
     return stream.getvalue().encode("utf-8-sig")
 
@@ -379,7 +383,7 @@ def _export_rows(db: Session) -> tuple[list[dict[str, object]], list[dict[str, o
 
 
 def _spreadsheet_safe(rows: list[dict[str, object]]) -> list[dict[str, object]]:
-    return [{key: (f"'{value}" if isinstance(value, str) and value.startswith(("=", "+", "-", "@")) else value)
+    return [{key: (_formula_safe(value) if isinstance(value, str) else value)
              for key, value in row.items()} for row in rows]
 
 

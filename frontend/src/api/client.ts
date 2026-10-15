@@ -82,6 +82,16 @@ async function apiRequest<T>(
   return (await response.text()) as T;
 }
 
+// Hands a downloaded file to the browser's save dialog.
+export function saveBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
 export const api = {
   login: async (email: string, password: string) =>
     apiRequest<LoginResponse>('/api/auth/login', {

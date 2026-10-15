@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import type { AttachmentSummary, AttachmentUpload, BudgetLine, BudgetValidationSummary } from '../types';
@@ -36,7 +36,6 @@ export function ReportEditorPage() {
   const params = useParams();
   const reportId = params.reportId ?? params.submissionId;
   const location = useLocation();
-  const navigate = useNavigate();
   const isAdminEdit = location.pathname.endsWith('/edit');
   const { token, user } = useAuth();
   const [lines, setLines] = useState<BudgetLine[]>([]);
@@ -135,25 +134,6 @@ export function ReportEditorPage() {
   const updateFormField = (id: string, value: unknown) => {
     markDirty();
     setFormData((current) => ({ ...current, [id]: value }));
-  };
-
-  const validateBudget = async () => {
-    if (!token) {
-      setError('A valid session token is required to validate budgets.');
-      return;
-    }
-
-    setSaving(true);
-    setError('');
-
-    try {
-      const nextSummary = await api.validateBudget(lines, token);
-      setSummary(nextSummary);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Budget validation failed');
-    } finally {
-      setSaving(false);
-    }
   };
 
   const saveSubmission = async (status: 'DRAFT' | 'SUBMITTED') => {

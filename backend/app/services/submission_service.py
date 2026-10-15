@@ -25,6 +25,9 @@ from app.models import (
 from app.services.budget_service import validate_budget_lines
 
 
+SUPPORTED_FIELD_TYPES = frozenset({"text", "textarea", "narrative", "integer", "number", "currency", "percentage", "date", "select", "dropdown", "boolean"})
+
+
 class SubmissionError(Exception):
     def __init__(self, detail: str, status_code: int) -> None:
         self.detail = detail
@@ -238,6 +241,20 @@ def list_review_queue(
     return result
 
 
+def _new_audit_log(db: Session, submission: Submission, user: User, action: str, state_diff: dict[str, object]) -> AuditLog:
+    values: dict[str, object] = {
+        "submission_id": submission.id,
+        "action": action,
+        "actor_id": user.id,
+        "actor_role": user.role,
+        "state_diff": state_diff,
+    }
+    # SQLite test databases do not autoincrement BIGINT keys.
+    if db.bind is not None and db.bind.dialect.name == "sqlite":
+        values["id"] = (db.scalar(select(func.max(AuditLog.id))) or 0) + 1
+    return AuditLog(**values)
+
+
 def apply_review_action(
     db: Session,
     submission: Submission,
@@ -258,21 +275,13 @@ def apply_review_action(
         raise SubmissionError(f"Action {action} is not valid while submission is {submission.status}.", 409)
     previous_status = submission.status
     submission.status = next_status
-    values: dict[str, object] = {
-        "submission_id": submission.id,
-        "action": action,
-        "actor_id": user.id,
-        "actor_role": user.role,
-        "state_diff": {
-            "from": previous_status,
-            "to": next_status,
-            "comment": comment.strip() if comment else None,
-        },
-    }
-    if db.bind is not None and db.bind.dialect.name == "sqlite":
-        values["id"] = (db.scalar(select(func.max(AuditLog.id))) or 0) + 1
+    audit_log = _new_audit_log(db, submission, user, action, {
+        "from": previous_status,
+        "to": next_status,
+        "comment": comment.strip() if comment else None,
+    })
     db.add(submission)
-    db.add(AuditLog(**values))
+    db.add(audit_log)
     try:
         db.commit()
     except Exception:
@@ -493,16 +502,8 @@ def persist_submission(
                 submitted_by=user.id,
             )
         )
-        audit_values: dict[str, object] = {
-            "submission_id": submission.id,
-            "action": "SUBMITTED",
-            "actor_id": user.id,
-            "actor_role": user.role,
-            "state_diff": {"from": "REVISION_REQUESTED" if was_revision else "DRAFT", "to": "SUBMITTED"},
-        }
-        if db.bind is not None and db.bind.dialect.name == "sqlite":
-            audit_values["id"] = (db.scalar(select(func.max(AuditLog.id))) or 0) + 1
-        db.add(AuditLog(**audit_values))
+        db.add(_new_audit_log(db, submission, user, "SUBMITTED",
+                              {"from": "REVISION_REQUESTED" if was_revision else "DRAFT", "to": "SUBMITTED"}))
 
     db.add(submission)
     try:
@@ -614,12 +615,7 @@ def edit_submitted_submission(
         version_number=version_number, template_version=submission.template_version,
         form_snapshot=form_data, budget_snapshot={"lines": snapshot, "total": str(total)},
         submitted_by=user.id, reviewer_notes=comment.strip()))
-    values: dict[str, object] = {"submission_id": submission.id, "action": "ADMIN_EDIT",
-        "actor_id": user.id, "actor_role": user.role,
-        "state_diff": {"version": version_number, "comment": comment.strip()}}
-    if db.bind is not None and db.bind.dialect.name == "sqlite":
-        values["id"] = (db.scalar(select(func.max(AuditLog.id))) or 0) + 1
-    db.add(AuditLog(**values))
+    db.add(_new_audit_log(db, submission, user, "ADMIN_EDIT", {"version": version_number, "comment": comment.strip()}))
     try:
         db.commit()
     except Exception:
@@ -633,7 +629,6 @@ def validate_form_data(schema: dict[str, object], form_data: dict[str, object]) 
     fields = get_form_fields(schema)
 
     errors: list[str] = []
-    supported_types = {"text", "textarea", "narrative", "integer", "number", "currency", "percentage", "date", "select", "dropdown", "boolean"}
     for field in fields:
         if not isinstance(field, dict) or not isinstance(field.get("id"), str):
             errors.append("The published form contains an invalid field definition.")
@@ -661,7 +656,7 @@ def validate_form_data(schema: dict[str, object], form_data: dict[str, object]) 
             continue
 
         field_type = str(field.get("type", "text"))
-        if field_type not in supported_types:
+        if field_type not in SUPPORTED_FIELD_TYPES:
             errors.append(f"The published form uses an unsupported field type for {label}.")
             continue
         try:

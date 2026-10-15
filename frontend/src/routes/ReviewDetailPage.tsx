@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { api } from '../api/client';
+import { api, saveBlob } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import type { SubmissionDetail } from '../types';
 
@@ -38,13 +38,7 @@ export function ReviewDetailPage() {
   const download = async (attachmentId: string, filename: string) => {
     if (!token) return;
     try {
-      const blob = await api.downloadAttachment(submissionId, attachmentId, token);
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = filename;
-      anchor.click();
-      URL.revokeObjectURL(url);
+      saveBlob(await api.downloadAttachment(submissionId, attachmentId, token), filename);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not download attachment.');
     }

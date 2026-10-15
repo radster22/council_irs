@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { api } from '../api/client';
+import { api, saveBlob } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import type { ReviewQueueItem } from '../types';
 
@@ -51,13 +51,7 @@ export function ReviewPage() {
   const downloadExport = async (kind: 'csv' | 'xlsx') => {
     if (!token) return;
     try {
-      const blob = await api.downloadExport(kind, token);
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = kind === 'csv' ? 'council-reporting-csv.zip' : 'council-reporting.xlsx';
-      anchor.click();
-      URL.revokeObjectURL(url);
+      saveBlob(await api.downloadExport(kind, token), kind === 'csv' ? 'council-reporting-csv.zip' : 'council-reporting.xlsx');
     } catch (err) {
       window.alert(err instanceof Error ? err.message : 'Export failed.');
     }

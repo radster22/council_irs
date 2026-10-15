@@ -134,15 +134,6 @@ export type InitiativeSummary = {
   status: string;
 };
 
-export type SubmissionSummary = {
-  id: string;
-  initiative_name: string;
-  organization_name: string;
-  cycle_name: string;
-  status: string;
-  total_budget: string;
-};
-
 export type InitiativeAdminItem = InitiativeSummary & {
   cycles: { id: string; cycle_name: string; start_date: string; due_date: string; status: string }[];
   assignments: { organization_id: string; ein: string; legal_name: string; awarded_amount: string }[];

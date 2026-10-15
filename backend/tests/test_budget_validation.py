@@ -1,5 +1,3 @@
-import pytest
-
 from app.services.budget_service import validate_budget_lines
 
 
